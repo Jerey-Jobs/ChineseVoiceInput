@@ -177,7 +177,7 @@ class VoiceTypingApp(QObject):
         self._recorder = Recorder(self._engine, app_obj=self)
         print(f"[DEBUG] Recorder 创建完成: {self._recorder}")
         print(f"[DEBUG] 连接 text_update 信号...")
-        self._recorder.text_update.connect(self._overlay.set_text)
+        self._recorder.text_update.connect(self._overlay.update_text)  # 实时更新文字
         print(f"[DEBUG] 启动录音...")
         self._recorder.start()
         print("[DEBUG] 录音已启动")
@@ -193,7 +193,8 @@ class VoiceTypingApp(QObject):
         print(f"[DEBUG] _on_recording_done 被调用，文本: '{text}'")
         self._overlay.stop_recording()  # 停止录音动画
         if text:
-            print("[DEBUG] 文本非空，调用 _type_text")
+            print("[DEBUG] 文本非空，显示最终文字并粘贴")
+            self._overlay.set_text(text)  # 显示最终文字（隐藏波形）
             self._type_text(text)
             # 粘贴完成后延迟恢复最小状态
             QTimer.singleShot(2000, self._overlay.reset)

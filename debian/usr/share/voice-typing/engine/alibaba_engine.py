@@ -60,6 +60,8 @@ class AlibabaEngine(BaseEngine):
             format="pcm",
             sample_rate=16000,
             callback=self._callback,
+            enable_punctuation_prediction=True,  # 启用标点预测
+            enable_inverse_text_normalization=True,  # 启用数字/时间规范化
         )
         self._recognition.start()
 

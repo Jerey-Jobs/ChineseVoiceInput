@@ -30,6 +30,77 @@ class LocalEngine(BaseEngine):
         self._running = False
         self._audio_buffer = []
         self._text_callback = None
+        self._punctuator = None
+
+    def _create_punctuation_model(self):
+        """创建修复版本的标点恢复模型（兼容新版 transformers）"""
+        from transformers import pipeline
+        import torch
+        import re
+
+        class FixedPunctuationModel:
+            def __init__(self, model="oliverguhr/fullstop-punctuation-multilang-large"):
+                # 修复：移除 grouped_entities 参数（新版 transformers 不支持）
+                if torch.cuda.is_available():
+                    self.pipe = pipeline("ner", model, device=0)
+                else:
+                    self.pipe = pipeline("ner", model)
+
+            def preprocess(self, text):
+                text = re.sub(r"(?<!\d)[.,;:!?](?!\d)", "", text)
+                text = text.split()
+                return text
+
+            def restore_punctuation(self, text):
+                result = self.predict(self.preprocess(text))
+                return self.prediction_to_text(result)
+
+            def overlap_chunks(self, lst, n, stride=0):
+                for i in range(0, len(lst), n - stride):
+                    yield lst[i:i + n]
+
+            def predict(self, words):
+                overlap = 5
+                chunk_size = 230
+                if len(words) <= chunk_size:
+                    overlap = 0
+
+                batches = list(self.overlap_chunks(words, chunk_size, overlap))
+                if len(batches[-1]) <= overlap:
+                    batches.pop()
+
+                tagged_words = []
+                for batch in batches:
+                    if batch == batches[-1]:
+                        overlap = 0
+                    text = " ".join(batch)
+                    result = self.pipe(text)
+
+                    char_index = 0
+                    result_index = 0
+                    for word in batch[:len(batch) - overlap]:
+                        char_index += len(word) + 1
+                        label = 0
+                        score = 0
+                        while result_index < len(result) and char_index > result[result_index]["end"]:
+                            label = result[result_index]['entity']
+                            score = result[result_index]['score']
+                            result_index += 1
+                        tagged_words.append([word, label, score])
+
+                return tagged_words
+
+            def prediction_to_text(self, prediction):
+                result = ""
+                for word, label, _ in prediction:
+                    result += word
+                    if label == "0":
+                        result += " "
+                    if label in ".,?-:":
+                        result += label + " "
+                return result.strip()
+
+        return FixedPunctuationModel()
 
     def initialize(self) -> bool:
         try:
@@ -44,6 +115,17 @@ class LocalEngine(BaseEngine):
                 compute_type="int8",
                 download_root=MODEL_DIR,
             )
+
+            # 初始化标点恢复模型（暂时禁用）
+            # try:
+            #     print("[LocalEngine] 加载标点恢复模型...")
+            #     self._punctuator = self._create_punctuation_model()
+            #     print("[LocalEngine] 标点恢复模型加载成功")
+            # except Exception as e:
+            #     print(f"[LocalEngine] 标点恢复模型加载失败: {e}")
+            #     self._punctuator = None
+            self._punctuator = None  # 暂时禁用标点恢复
+
             return True
         except Exception as e:
             print(f"[LocalEngine] 初始化失败: {e}")
@@ -92,6 +174,14 @@ class LocalEngine(BaseEngine):
                 vad_filter=True,
             )
             text = " ".join(seg.text.strip() for seg in segments)
+
+            # 添加标点符号（暂时禁用）
+            # if self._punctuator and text:
+            #     try:
+            #         text = self._punctuator.restore_punctuation(text)
+            #     except Exception as e:
+            #         print(f"[LocalEngine] 标点恢复失败: {e}")
+
             if self._text_callback:
                 self._text_callback(text)
             return text

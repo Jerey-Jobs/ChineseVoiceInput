@@ -4,3 +4,4 @@ dashscope
 pynput
 faster-whisper
 numpy
+deepmultilingualpunctuation

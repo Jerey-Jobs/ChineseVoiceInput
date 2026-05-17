@@ -106,6 +106,7 @@ class OverlayWindow(QWidget):
         )
         self._text_label.setWordWrap(True)
         self._text_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self._text_label.setMaximumWidth(600)  # 限制文字标签最大宽度
         self._text_label.hide()  # 初始隐藏
 
         # 布局
@@ -178,8 +179,28 @@ class OverlayWindow(QWidget):
         self._indicator.set_recording(False)
         self._waveform.stop()
 
+    def update_text(self, text: str):
+        """实时更新文字（录音时），保持波形显示"""
+        if not text:
+            return
+
+        # 显示文字，但保持波形运行
+        self._text_label.setText(text)
+        self._text_label.show()
+
+        # 让 QLabel 自己计算换行后的尺寸
+        self._text_label.adjustSize()
+        label_size = self._text_label.sizeHint()
+
+        # 窗口宽度 = 圆球 + 间距 + 波形 + 间距 + 文字实际宽度 + 边距
+        width = 24 + 12 + 200 + 12 + label_size.width() + 32
+        # 窗口高度 = 文字实际高度 + 边距
+        height = max(64, label_size.height() + 24)
+
+        self._animate_to_size(width, height)
+
     def set_text(self, text: str):
-        """设置文字，自动调整窗口大小"""
+        """设置最终文字（录音结束后），隐藏波形"""
         if not text:
             return
 
@@ -188,31 +209,14 @@ class OverlayWindow(QWidget):
         self._text_label.setText(text)
         self._text_label.show()
 
-        # 计算文字所需宽度
-        font = QFont("Sans", 15)
-        metrics = QFontMetrics(font)
-        screen_width = QApplication.primaryScreen().availableGeometry().width()
+        # 让 QLabel 自己计算换行后的尺寸
+        self._text_label.adjustSize()
+        label_size = self._text_label.sizeHint()
 
-        text_width = metrics.horizontalAdvance(text)
-        max_width = int(screen_width * 0.6)
-        min_width = 200
-
-        # 计算窗口宽度
-        total_width = text_width + 56 + 32  # 文字 + 圆球 + 边距
-        if total_width < min_width:
-            width = min_width
-        elif total_width > max_width:
-            width = max_width
-        else:
-            width = total_width
-
-        # 计算高度（考虑换行）
-        text_rect = metrics.boundingRect(
-            0, 0, width - 56 - 32, 1000,
-            Qt.TextWordWrap | Qt.AlignLeft,
-            text
-        )
-        height = max(64, text_rect.height() + 24)
+        # 窗口宽度 = 圆球 + 间距 + 文字实际宽度 + 边距
+        width = 24 + 12 + label_size.width() + 32
+        # 窗口高度 = 文字实际高度 + 边距
+        height = max(64, label_size.height() + 24)
 
         self._animate_to_size(width, height)
 
