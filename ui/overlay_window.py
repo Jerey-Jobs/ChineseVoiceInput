@@ -90,10 +90,14 @@ class OverlayWindow(QWidget):
             Qt.FramelessWindowHint
             | Qt.WindowStaysOnTopHint
             | Qt.Tool
-            | Qt.WindowDoesNotAcceptFocus
         )
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setAttribute(Qt.WA_ShowWithoutActivating)
+
+        # 拖拽相关
+        self._dragging = False
+        self._drag_position = None
+        self._user_moved = False  # 标记用户是否手动移动过窗口
 
         # 组件
         self._indicator = StatusIndicator()
@@ -140,15 +144,23 @@ class OverlayWindow(QWidget):
         self._animate_to_size(280, 64)
 
     def _animate_to_size(self, width: int, height: int):
-        """平滑过渡到新尺寸"""
-        screen = QApplication.primaryScreen().availableGeometry()
-        x = (screen.width() - width) // 2
-        y = screen.bottom() - height - 60
+        """平滑过渡到新尺寸，保持用户拖拽后的位置"""
+        current_rect = self.geometry()
 
-        start_rect = self.geometry()
+        if self._user_moved:
+            # 用户移动过窗口，保持当前中心点位置
+            center_x = current_rect.x() + current_rect.width() // 2
+            center_y = current_rect.y() + current_rect.height() // 2
+            x = center_x - width // 2
+            y = center_y - height // 2
+        else:
+            # 首次显示或未移动过，居中到屏幕底部
+            screen = QApplication.primaryScreen().availableGeometry()
+            x = (screen.width() - width) // 2
+            y = screen.bottom() - height - 60
+
         end_rect = QRect(x, y, width, height)
-
-        self._size_animation.setStartValue(start_rect)
+        self._size_animation.setStartValue(current_rect)
         self._size_animation.setEndValue(end_rect)
         self._size_animation.start()
 
@@ -227,3 +239,23 @@ class OverlayWindow(QWidget):
         self._text_label.hide()
         self._text_label.setText("")
         self._set_idle_size()
+
+    def mousePressEvent(self, event):
+        """鼠标按下：记录拖拽起始位置"""
+        if event.button() == Qt.LeftButton:
+            self._dragging = True
+            self._drag_position = event.globalPos() - self.frameGeometry().topLeft()
+            event.accept()
+
+    def mouseMoveEvent(self, event):
+        """鼠标移动：拖拽窗口"""
+        if self._dragging and event.buttons() == Qt.LeftButton:
+            self.move(event.globalPos() - self._drag_position)
+            event.accept()
+
+    def mouseReleaseEvent(self, event):
+        """鼠标释放：结束拖拽"""
+        if event.button() == Qt.LeftButton:
+            self._dragging = False
+            self._user_moved = True  # 标记用户已手动移动窗口
+            event.accept()
