@@ -36,11 +36,17 @@ class StatusIndicator(QWidget):
 class WaveformWidget(QWidget):
     """波形动画组件"""
 
+    BAR_COUNT = 5
+    BAR_WIDTH = 3
+    BAR_SPACING = 4
+    MAX_HEIGHT = 18
+    TOTAL_WIDTH = BAR_COUNT * (BAR_WIDTH + BAR_SPACING) - BAR_SPACING  # 31px
+
     def __init__(self):
         super().__init__()
-        self.setMinimumSize(200, 40)
-        self.setSizePolicy(self.sizePolicy().Expanding, self.sizePolicy().Fixed)
-        self._wave_heights = [0.0] * 15
+        self.setMinimumSize(self.TOTAL_WIDTH, 24)
+        self.setSizePolicy(self.sizePolicy().Fixed, self.sizePolicy().Fixed)
+        self._wave_heights = [0.0] * self.BAR_COUNT
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._update_wave)
 
@@ -50,12 +56,11 @@ class WaveformWidget(QWidget):
 
     def stop(self):
         self._timer.stop()
-        self._wave_heights = [0.0] * 15
+        self._wave_heights = [0.0] * self.BAR_COUNT
         self.update()
         self.hide()
 
     def _update_wave(self):
-        # 随机生成波形高度
         for i in range(len(self._wave_heights)):
             target = random.uniform(0.3, 1.0)
             self._wave_heights[i] = self._wave_heights[i] * 0.6 + target * 0.4
@@ -66,18 +71,13 @@ class WaveformWidget(QWidget):
         painter.setRenderHint(QPainter.Antialiasing)
         painter.setPen(Qt.NoPen)
 
-        bar_width = 4
-        spacing = 8
-        max_height = 30
-
         for i, height in enumerate(self._wave_heights):
-            x = i * (bar_width + spacing)
-            h = int(height * max_height)
+            x = i * (self.BAR_WIDTH + self.BAR_SPACING)
+            h = int(height * self.MAX_HEIGHT)
             y = (self.height() - h) // 2
 
-            # 红色波形
             painter.setBrush(QBrush(QColor(239, 68, 68, 200)))
-            painter.drawRoundedRect(x, y, bar_width, h, 2, 2)
+            painter.drawRoundedRect(x, y, self.BAR_WIDTH, h, 2, 2)
 
 
 class OverlayWindow(QWidget):
@@ -141,23 +141,20 @@ class OverlayWindow(QWidget):
 
     def _set_recording_size(self):
         """录音状态：红色圆球 + 波形"""
-        self._animate_to_size(280, 64)
+        self._animate_to_size(100, 48)
+
+    # 圆点中心距窗口左边缘的固定偏移（16 margin + 24/2 indicator）
+    DOT_CENTER_X = 28
 
     def _animate_to_size(self, width: int, height: int):
-        """平滑过渡到新尺寸，保持用户拖拽后的位置"""
+        """平滑过渡到新尺寸，以红/绿圆点中心为锚点，圆点屏幕位置保持不变"""
         current_rect = self.geometry()
 
-        if self._user_moved:
-            # 用户移动过窗口，保持当前中心点位置
-            center_x = current_rect.x() + current_rect.width() // 2
-            center_y = current_rect.y() + current_rect.height() // 2
-            x = center_x - width // 2
-            y = center_y - height // 2
-        else:
-            # 首次显示或未移动过，居中到屏幕底部
-            screen = QApplication.primaryScreen().availableGeometry()
-            x = (screen.width() - width) // 2
-            y = screen.bottom() - height - 60
+        dot_x = current_rect.x() + self.DOT_CENTER_X
+        dot_y = current_rect.y() + current_rect.height() // 2
+
+        x = dot_x - self.DOT_CENTER_X
+        y = dot_y - height // 2
 
         end_rect = QRect(x, y, width, height)
         self._size_animation.setStartValue(current_rect)
@@ -165,9 +162,9 @@ class OverlayWindow(QWidget):
         self._size_animation.start()
 
     def _center_on_screen(self):
-        """居中到屏幕底部"""
+        """以圆点为中心定位到屏幕底部"""
         screen = QApplication.primaryScreen().availableGeometry()
-        x = (screen.width() - self.width()) // 2
+        x = screen.width() // 2 - self.DOT_CENTER_X
         y = screen.bottom() - self.height() - 60
         self.move(x, y)
 
@@ -180,13 +177,17 @@ class OverlayWindow(QWidget):
         painter.drawRoundedRect(self.rect(), 24, 24)
 
     def start_recording(self):
-        """开始录音：圆球变红 + 显示波形"""
+        """开始录音：圆球变红 + 窗口扩展开启动画 + 波形渐现"""
         self._indicator.set_recording(True)
         self._text_received = False
         self._text_label.hide()
+        self._set_recording_size()
+        QTimer.singleShot(80, self._show_waveform)
+
+    def _show_waveform(self):
+        """延迟显示波形，与窗口扩展动画同步"""
         self._waveform.start()
         self._waveform.show()
-        self._set_recording_size()
 
     def stop_recording(self):
         """停止录音：圆球变绿 + 隐藏波形"""
@@ -206,12 +207,12 @@ class OverlayWindow(QWidget):
             self._text_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
             self._text_label.setMinimumWidth(0)
             self._text_label.setMaximumWidth(self.MAX_LABEL_WIDTH)
-            return text_width, max(64, fm.height() + 24)
+            return text_width, 48
         else:
             self._text_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
             self._text_label.setMinimumWidth(self.MAX_LABEL_WIDTH)
             self._text_label.setMaximumWidth(self.MAX_LABEL_WIDTH)
-            return self.MAX_LABEL_WIDTH, max(64, fm.height() + 24)
+            return self.MAX_LABEL_WIDTH, 48
 
     def update_text(self, text: str):
         """实时更新文字（录音时），首次收到文字后隐藏波形"""
