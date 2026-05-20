@@ -150,7 +150,10 @@ class VoiceTypingApp(QObject):
     def _create_engine(self):
         engine_type = self._config["engine"]
         if engine_type == "alibaba":
-            self._engine = AlibabaEngine(api_key=self._config.get("alibaba_api_key", ""))
+            self._engine = AlibabaEngine(
+                api_key=self._config.get("alibaba_api_key", ""),
+                phrase_id=self._config.get("phrase_id", ""),
+            )
         else:
             self._engine = LocalEngine(model_size=self._config.get("local_model", "base"))
         self._engine.initialize()

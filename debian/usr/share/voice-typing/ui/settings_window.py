@@ -3,34 +3,78 @@
 import subprocess
 import threading
 
-from PyQt5.QtCore import Qt, pyqtSignal, QTimer
+from PyQt5.QtCore import Qt, pyqtSignal, QTimer, QByteArray
 from PyQt5.QtGui import QIcon, QPixmap, QPainter, QColor, QBrush
+from PyQt5.QtSvg import QSvgRenderer
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QLabel,
     QLineEdit, QComboBox, QPushButton, QProgressBar,
     QSystemTrayIcon, QMenu, QAction, QApplication, QMessageBox,
+    QListWidget, QListWidgetItem, QScrollArea,
 )
 
 from config_manager import load_config, save_config
 from engine.alibaba_engine import AlibabaEngine
 from engine.local_engine import LocalEngine, download_model
+from vocabulary_manager import sync_vocabulary
 
 
 def _make_tray_icon():
-    """生成绿色圆形托盘图标"""
-    pix = QPixmap(32, 32)
-    pix.fill(Qt.transparent)
-    p = QPainter(pix)
-    p.setRenderHint(QPainter.Antialiasing)
-    p.setBrush(QBrush(QColor(34, 197, 94)))
-    p.setPen(Qt.NoPen)
-    p.drawEllipse(4, 4, 24, 24)
-    # 白色麦克风简化符号
-    p.setBrush(QBrush(QColor(13, 13, 13)))
-    p.drawRoundedRect(13, 7, 6, 10, 2, 2)
-    p.drawRoundedRect(11, 14, 10, 3, 1, 1)
-    p.end()
-    return QIcon(pix)
+    """加载麦克风图标作为托盘图标"""
+    import os
+    # 获取图标文件路径（相对于当前文件）
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    icon_path = os.path.join(current_dir, "image", "20260518-213528.jpg")
+
+    # 如果图标文件存在，使用它；否则使用默认绘制的图标
+    if os.path.exists(icon_path):
+        pix = QPixmap(icon_path)
+        # 缩放到合适的托盘图标尺寸
+        pix = pix.scaled(32, 32, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        return QIcon(pix)
+    else:
+        # 备用方案：绘制简单的绿色圆形图标
+        pix = QPixmap(32, 32)
+        pix.fill(Qt.transparent)
+        p = QPainter(pix)
+        p.setRenderHint(QPainter.Antialiasing)
+        p.setBrush(QBrush(QColor(34, 197, 94)))
+        p.setPen(Qt.NoPen)
+        p.drawEllipse(4, 4, 24, 24)
+        # 白色麦克风简化符号
+        p.setBrush(QBrush(QColor(13, 13, 13)))
+        p.drawRoundedRect(13, 7, 6, 10, 2, 2)
+        p.drawRoundedRect(11, 14, 10, 3, 1, 1)
+        p.end()
+        return QIcon(pix)
+
+
+def _make_eye_icon(visible=True):
+    """生成眼睛图标（SVG）"""
+    if visible:
+        # 睁眼图标
+        svg_data = """
+        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"
+                  fill="#9ca3af"/>
+        </svg>
+        """
+    else:
+        # 闭眼图标
+        svg_data = """
+        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l2.16 2.16C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z"
+                  fill="#9ca3af"/>
+        </svg>
+        """
+
+    renderer = QSvgRenderer(QByteArray(svg_data.encode()))
+    pixmap = QPixmap(24, 24)
+    pixmap.fill(Qt.transparent)
+    painter = QPainter(pixmap)
+    renderer.render(painter)
+    painter.end()
+    return QIcon(pixmap)
 
 
 class SettingsWindow(QWidget):
@@ -60,7 +104,7 @@ class SettingsWindow(QWidget):
 
     def _init_ui(self):
         self.setWindowTitle("VoiceType")
-        self.setFixedSize(480, 620)
+        self.setFixedSize(520, 750)
         self.setWindowIcon(_make_tray_icon())
 
         root = QVBoxLayout(self)
@@ -76,6 +120,18 @@ class SettingsWindow(QWidget):
         root.addWidget(subtitle)
         root.addSpacing(6)
 
+        # 创建滚动区域
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.NoFrame)
+        scroll.setStyleSheet("QScrollArea { background: transparent; }")
+
+        # 滚动内容容器
+        scroll_content = QWidget()
+        scroll_layout = QVBoxLayout(scroll_content)
+        scroll_layout.setContentsMargins(0, 0, 0, 0)
+        scroll_layout.setSpacing(12)
+
         # 卡片 1: 引擎选择
         engine_card = QGroupBox("引擎选择")
         elayout = QVBoxLayout(engine_card)
@@ -83,7 +139,7 @@ class SettingsWindow(QWidget):
         self._engine_combo = QComboBox()
         self._engine_combo.addItem("阿里云 Paraformer（云端）", "alibaba")
         self._engine_combo.addItem("faster-whisper（本地）", "local")
-        self._engine_combo.currentIndexChanged.connect(self._on_engine_switch)
+        self._engine_combo.currentIndexChanged.connect(self._on_engine_preview)
         elayout.addWidget(self._engine_combo)
 
         # 本地模型设置（默认隐藏）
@@ -108,23 +164,57 @@ class SettingsWindow(QWidget):
         self._progress_bar.hide()
         elayout.addWidget(self._progress_bar)
 
-        root.addWidget(engine_card)
+        scroll_layout.addWidget(engine_card)
 
         # 卡片 2: API 配置
         self._api_card = QGroupBox("API 配置")
         alayout = QVBoxLayout(self._api_card)
 
-        self._api_input = QLineEdit()
+        # API 输入框（带内嵌按钮的自定义容器）
+        api_wrapper = QWidget()
+        api_wrapper.setFixedHeight(40)
+
+        # 输入框
+        self._api_input = QLineEdit(api_wrapper)
         self._api_input.setPlaceholderText("输入阿里云 DashScope API Key")
         self._api_input.setEchoMode(QLineEdit.Password)
-        self._api_input.textChanged.connect(self._on_api_key_changed)
-        alayout.addWidget(self._api_input)
+        self._api_input.setGeometry(0, 0, 400, 40)  # 初始宽度，会自动调整
+        self._api_input.setStyleSheet("padding-right: 40px;")
+
+        # 眼睛按钮（绝对定位在输入框内部右侧）
+        self._eye_btn = QPushButton(api_wrapper)
+        self._eye_btn.setIcon(_make_eye_icon(visible=True))
+        self._eye_btn.setFixedSize(35, 35)
+        self._eye_btn.setStyleSheet("""
+            QPushButton {
+                border: none;
+                background: transparent;
+            }
+            QPushButton:hover {
+                background: rgba(255, 255, 255, 0.1);
+                border-radius: 4px;
+            }
+        """)
+        self._eye_btn.setCursor(Qt.PointingHandCursor)
+        self._eye_btn.setToolTip("显示/隐藏 API Key")
+        self._eye_btn.clicked.connect(self._toggle_api_visibility)
+
+        # 监听容器大小变化，动态调整控件位置
+        def resize_api_widgets():
+            w = api_wrapper.width()
+            self._api_input.setGeometry(0, 0, w, 40)
+            self._eye_btn.setGeometry(w - 38, 3, 35, 35)
+
+        api_wrapper.resizeEvent = lambda e: resize_api_widgets()
+        resize_api_widgets()
+
+        alayout.addWidget(api_wrapper)
 
         self._api_status = QLabel("")
         self._api_status.setObjectName("status")
         alayout.addWidget(self._api_status)
 
-        root.addWidget(self._api_card)
+        scroll_layout.addWidget(self._api_card)
 
         # 卡片 3: 快捷键
         hotkey_card = QGroupBox("快捷键")
@@ -141,9 +231,64 @@ class SettingsWindow(QWidget):
         hrow.addWidget(self._clear_hotkey_btn)
         hlayout.addLayout(hrow)
 
-        root.addWidget(hotkey_card)
+        scroll_layout.addWidget(hotkey_card)
 
-        root.addStretch()
+        # 卡片 4: 自定义词库
+        vocab_card = QGroupBox("自定义词库")
+        vlayout = QVBoxLayout(vocab_card)
+        vlayout.setSpacing(8)
+
+        vocab_hint = QLabel("添加识别错误的词汇映射（先说一遍，看识别成什么，再添加映射）")
+        vocab_hint.setObjectName("subtitle")
+        vocab_hint.setWordWrap(True)
+        vlayout.addWidget(vocab_hint)
+
+        # 词库列表
+        self._vocab_list = QListWidget()
+        self._vocab_list.setMaximumHeight(120)
+        vlayout.addWidget(self._vocab_list)
+
+        # 添加热词输入（单个输入框）
+        add_row = QHBoxLayout()
+        self._vocab_input = QLineEdit()
+        self._vocab_input.setPlaceholderText("输入热词（如：CUDA、GitHub、Python）")
+        add_row.addWidget(self._vocab_input)
+
+        add_vocab_btn = QPushButton("添加")
+        add_vocab_btn.setObjectName("accent")
+        add_vocab_btn.setFixedWidth(80)
+        add_vocab_btn.clicked.connect(self._add_vocabulary)
+        add_row.addWidget(add_vocab_btn)
+        vlayout.addLayout(add_row)
+
+        # 删除按钮
+        del_vocab_btn = QPushButton("删除选中")
+        del_vocab_btn.clicked.connect(self._delete_vocabulary)
+        vlayout.addWidget(del_vocab_btn)
+
+        scroll_layout.addWidget(vocab_card)
+        scroll_layout.addStretch()
+
+        # 将滚动区域添加到主布局
+        scroll.setWidget(scroll_content)
+        root.addWidget(scroll)
+
+        # 底部按钮行
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+
+        self._cancel_btn = QPushButton("取消")
+        self._cancel_btn.setMinimumWidth(100)
+        self._cancel_btn.clicked.connect(self._on_cancel)
+        btn_row.addWidget(self._cancel_btn)
+
+        self._apply_btn = QPushButton("确定")
+        self._apply_btn.setObjectName("accent")
+        self._apply_btn.setMinimumWidth(100)
+        self._apply_btn.clicked.connect(self._on_apply)
+        btn_row.addWidget(self._apply_btn)
+
+        root.addLayout(btn_row)
 
         # 底部状态
         self._status_label = QLabel("")
@@ -174,7 +319,10 @@ class SettingsWindow(QWidget):
     def _create_engine(self):
         engine_type = self._config["engine"]
         if engine_type == "alibaba":
-            engine = AlibabaEngine(api_key=self._config.get("alibaba_api_key", ""))
+            engine = AlibabaEngine(
+                api_key=self._config.get("alibaba_api_key", ""),
+                phrase_id=self._config.get("phrase_id", ""),
+            )
             engine.initialize()
         else:
             size = self._config.get("local_model", "base")
@@ -215,12 +363,24 @@ class SettingsWindow(QWidget):
             # 检查模型是否已下载
             self._check_model_status()
 
+        # 自定义词库（热词列表）
+        vocab = self._config.get("custom_vocabulary", [])
+        self._vocab_list.clear()
+
+        # 兼容旧版本字典格式，转换为列表
+        if isinstance(vocab, dict):
+            # 提取所有正确词汇作为热词
+            vocab = list(vocab.values())
+            self._config["custom_vocabulary"] = vocab
+
+        for hotword in vocab:
+            self._vocab_list.addItem(hotword)
+
     # ---------- 事件处理 ----------
 
-    def _on_engine_switch(self, index):
+    def _on_engine_preview(self, index):
+        """引擎切换预览（不保存）"""
         engine_type = self._engine_combo.currentData()
-        self._config["engine"] = engine_type
-        save_config(self._config)
 
         if engine_type == "local":
             self._local_widget.show()
@@ -233,8 +393,106 @@ class SettingsWindow(QWidget):
             self._api_card.show()
             self._api_input.setEnabled(True)
 
+    def _on_apply(self):
+        """确定按钮：保存配置并应用"""
+        # 保存引擎类型
+        engine_type = self._engine_combo.currentData()
+        self._config["engine"] = engine_type
+
+        # 保存 API Key
+        api_key = self._api_input.text()
+        self._config["alibaba_api_key"] = api_key
+
+        # 保存本地模型
+        size_index = self._model_combo.currentIndex()
+        sizes = ["tiny", "base", "small"]
+        self._config["local_model"] = sizes[size_index]
+
+        # 保存自定义词库（热词列表）
+        vocab = []
+        for i in range(self._vocab_list.count()):
+            hotword = self._vocab_list.item(i).text()
+            vocab.append(hotword)
+        self._config["custom_vocabulary"] = vocab
+
+        # 同步热词表到阿里云，获取 phrase_id
+        if engine_type == "alibaba" and vocab and api_key:
+            self._status_label.setText("正在同步热词表...")
+            QApplication.processEvents()  # 立即刷新UI
+            phrase_id = sync_vocabulary(
+                api_key=api_key,
+                hotwords=vocab,
+                phrase_id=self._config.get("phrase_id", ""),
+            )
+            if phrase_id:
+                self._config["phrase_id"] = phrase_id
+            else:
+                self._status_label.setText("热词同步失败（识别仍可用，热词不生效）")
+                QTimer.singleShot(3000, lambda: self._update_status())
+        elif not vocab:
+            # 热词列表为空，清空 phrase_id
+            self._config["phrase_id"] = ""
+
+        # 保存配置文件
+        save_config(self._config)
+
+        # 重新创建引擎
         self._create_engine()
         self._update_status()
+
+        # 提示用户
+        self._status_label.setText("设置已保存并应用")
+        QTimer.singleShot(2000, lambda: self._update_status())
+
+    def _on_cancel(self):
+        """取消按钮：恢复到已保存的配置"""
+        self._apply_config()
+        self._status_label.setText("已恢复到上次保存的设置")
+        QTimer.singleShot(2000, lambda: self._update_status())
+
+    def _toggle_api_visibility(self):
+        """切换 API Key 显示/隐藏"""
+        if self._api_input.echoMode() == QLineEdit.Password:
+            self._api_input.setEchoMode(QLineEdit.Normal)
+            self._eye_btn.setIcon(_make_eye_icon(visible=False))
+        else:
+            self._api_input.setEchoMode(QLineEdit.Password)
+            self._eye_btn.setIcon(_make_eye_icon(visible=True))
+
+    def _add_vocabulary(self):
+        """添加热词"""
+        hotword = self._vocab_input.text().strip()
+
+        if not hotword:
+            self._status_label.setText("请输入热词")
+            QTimer.singleShot(2000, lambda: self._update_status())
+            return
+
+        # 检查是否已存在
+        for i in range(self._vocab_list.count()):
+            if self._vocab_list.item(i).text() == hotword:
+                self._status_label.setText(f"热词 '{hotword}' 已存在")
+                QTimer.singleShot(2000, lambda: self._update_status())
+                return
+
+        # 添加到列表
+        self._vocab_list.addItem(hotword)
+        self._vocab_input.clear()
+        self._status_label.setText(f"已添加热词 '{hotword}'（点击确定保存）")
+        QTimer.singleShot(2000, lambda: self._update_status())
+
+    def _delete_vocabulary(self):
+        """删除选中的热词"""
+        current_item = self._vocab_list.currentItem()
+        if current_item:
+            hotword = current_item.text()
+            self._vocab_list.takeItem(self._vocab_list.row(current_item))
+            self._status_label.setText(f"已删除热词 '{hotword}'（点击确定保存）")
+            QTimer.singleShot(2000, lambda: self._update_status())
+
+    def _on_engine_switch(self, index):
+        """引擎切换（旧方法，保留用于兼容）"""
+        self._on_engine_preview(index)
 
     def _check_model_status(self):
         """检查本地模型是否已下载"""
@@ -253,12 +511,7 @@ class SettingsWindow(QWidget):
             self._status_label.setText("请先下载模型")
 
     def _on_api_key_changed(self, text):
-        self._config["alibaba_api_key"] = text
-        save_config(self._config)
-        if self._config["engine"] == "alibaba":
-            self._create_engine()
-            self._update_status()
-        # 简单的输入提示
+        """API Key 输入提示（不保存）"""
         if text and len(text) > 10:
             self._api_status.setText("API Key 已填写")
         elif text:
@@ -271,6 +524,7 @@ class SettingsWindow(QWidget):
         sizes = ["tiny", "base", "small"]
         model_size = sizes[size_index]
 
+        # 下载时保存模型选择
         self._config["local_model"] = model_size
         save_config(self._config)
 
@@ -327,6 +581,7 @@ class SettingsWindow(QWidget):
 
         def on_done(keys):
             if len(keys) >= 2:  # 至少一个修饰键 + 一个字符键
+                # 保存快捷键（快捷键需要立即生效）
                 self._config["hotkey"] = keys
                 save_config(self._config)
                 self._hotkey.set_hotkey(keys)

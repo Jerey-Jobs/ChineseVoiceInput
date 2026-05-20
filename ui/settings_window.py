@@ -16,6 +16,7 @@ from PyQt5.QtWidgets import (
 from config_manager import load_config, save_config
 from engine.alibaba_engine import AlibabaEngine
 from engine.local_engine import LocalEngine, download_model
+from vocabulary_manager import sync_vocabulary
 
 
 def _make_tray_icon():
@@ -235,6 +236,7 @@ class SettingsWindow(QWidget):
         # 卡片 4: 自定义词库
         vocab_card = QGroupBox("自定义词库")
         vlayout = QVBoxLayout(vocab_card)
+        vlayout.setSpacing(8)
 
         vocab_hint = QLabel("添加识别错误的词汇映射（先说一遍，看识别成什么，再添加映射）")
         vocab_hint.setObjectName("subtitle")
@@ -317,10 +319,9 @@ class SettingsWindow(QWidget):
     def _create_engine(self):
         engine_type = self._config["engine"]
         if engine_type == "alibaba":
-            vocabulary = self._config.get("custom_vocabulary", [])
             engine = AlibabaEngine(
                 api_key=self._config.get("alibaba_api_key", ""),
-                vocabulary=vocabulary
+                phrase_id=self._config.get("phrase_id", ""),
             )
             engine.initialize()
         else:
@@ -399,7 +400,8 @@ class SettingsWindow(QWidget):
         self._config["engine"] = engine_type
 
         # 保存 API Key
-        self._config["alibaba_api_key"] = self._api_input.text()
+        api_key = self._api_input.text()
+        self._config["alibaba_api_key"] = api_key
 
         # 保存本地模型
         size_index = self._model_combo.currentIndex()
@@ -412,6 +414,24 @@ class SettingsWindow(QWidget):
             hotword = self._vocab_list.item(i).text()
             vocab.append(hotword)
         self._config["custom_vocabulary"] = vocab
+
+        # 同步热词表到阿里云，获取 phrase_id
+        if engine_type == "alibaba" and vocab and api_key:
+            self._status_label.setText("正在同步热词表...")
+            QApplication.processEvents()  # 立即刷新UI
+            phrase_id = sync_vocabulary(
+                api_key=api_key,
+                hotwords=vocab,
+                phrase_id=self._config.get("phrase_id", ""),
+            )
+            if phrase_id:
+                self._config["phrase_id"] = phrase_id
+            else:
+                self._status_label.setText("热词同步失败（识别仍可用，热词不生效）")
+                QTimer.singleShot(3000, lambda: self._update_status())
+        elif not vocab:
+            # 热词列表为空，清空 phrase_id
+            self._config["phrase_id"] = ""
 
         # 保存配置文件
         save_config(self._config)

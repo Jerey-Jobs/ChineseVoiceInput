@@ -103,6 +103,7 @@ class OverlayWindow(QWidget):
         self._indicator = StatusIndicator()
         self._waveform = WaveformWidget()
         self._waveform.hide()  # 初始隐藏
+        self._text_received = False  # 当前录音周期是否已收到文字
 
         self._text_label = QLabel("")
         self._text_label.setStyleSheet(
@@ -182,8 +183,10 @@ class OverlayWindow(QWidget):
     def start_recording(self):
         """开始录音：圆球变红 + 显示波形"""
         self._indicator.set_recording(True)
+        self._text_received = False
         self._text_label.hide()
         self._waveform.start()
+        self._waveform.show()
         self._set_recording_size()
 
     def stop_recording(self):
@@ -192,21 +195,24 @@ class OverlayWindow(QWidget):
         self._waveform.stop()
 
     def update_text(self, text: str):
-        """实时更新文字（录音时），保持波形显示"""
+        """实时更新文字（录音时），首次收到文字后隐藏波形"""
         if not text:
             return
 
-        # 显示文字，但保持波形运行
+        # 首次收到识别文字 → 隐藏波形，只显示文字
+        if not self._text_received:
+            self._text_received = True
+            self._waveform.stop()
+            self._waveform.hide()
+
         self._text_label.setText(text)
         self._text_label.show()
 
-        # 让 QLabel 自己计算换行后的尺寸
         self._text_label.adjustSize()
         label_size = self._text_label.sizeHint()
 
-        # 窗口宽度 = 圆球 + 间距 + 波形 + 间距 + 文字实际宽度 + 边距
-        width = 24 + 12 + 200 + 12 + label_size.width() + 32
-        # 窗口高度 = 文字实际高度 + 边距
+        # 窗口宽度 = 圆球 + 间距 + 文字实际宽度 + 边距（波形已隐藏，不计入）
+        width = 24 + 12 + label_size.width() + 32
         height = max(64, label_size.height() + 24)
 
         self._animate_to_size(width, height)

@@ -49,13 +49,13 @@ class AlibabaEngine(BaseEngine):
 
     name = "阿里云 Paraformer"
 
-    def __init__(self, api_key: str = "", vocabulary: list = None):
+    def __init__(self, api_key: str = "", phrase_id: str = None):
         self._api_key = api_key
         self._recognition = None
         self._callback = None
         self._queue = queue.Queue()
         self._running = False
-        self._vocabulary = vocabulary or []  # 热词列表：["CUDA", "GitHub", "Python"]
+        self._phrase_id = phrase_id  # 热词表ID（UUID格式）
 
     def initialize(self) -> bool:
         if not self._api_key:
@@ -69,32 +69,33 @@ class AlibabaEngine(BaseEngine):
     def set_api_key(self, key: str):
         self._api_key = key
 
+    def set_phrase_id(self, phrase_id: str):
+        self._phrase_id = phrase_id
+
     def start(self):
         self._callback = ParaformerCallback()
         self._queue = queue.Queue()
         self._running = True
 
-        # 构建识别参数
-        recognition_params = {
-            "model": "paraformer-realtime-v2",
-            "format": "pcm",
-            "sample_rate": 16000,
-            "callback": self._callback,
-            "enable_punctuation_prediction": True,
-            "enable_inverse_text_normalization": True,
-        }
+        self._recognition = Recognition(
+            model="paraformer-realtime-v2",
+            format="pcm",
+            sample_rate=16000,
+            callback=self._callback,
+            enable_punctuation_prediction=True,
+            enable_inverse_text_normalization=True,
+        )
 
-        # 如果有自定义热词，尝试传递给API
-        # 注意：中文语音识别对英文单词的识别准确率较低，热词效果可能有限
-        if self._vocabulary:
-            hotwords = ",".join(self._vocabulary)
-            # 尝试多个可能的参数名称
-            recognition_params["vocabulary_id"] = hotwords
-            recognition_params["hotwords"] = hotwords
-            recognition_params["hot_words"] = hotwords
-
-        self._recognition = Recognition(**recognition_params)
-        self._recognition.start()
+        # 传入热词表 phrase_id / vocabulary_id
+        # phrase_id → v1 格式（resources），vocabulary_id → v2 格式（parameters）
+        if self._phrase_id:
+            print(f"[热词] 传入 phrase_id / vocabulary_id: {self._phrase_id}")
+            self._recognition.start(
+                phrase_id=self._phrase_id,
+                vocabulary_id=self._phrase_id,
+            )
+        else:
+            self._recognition.start()
 
     def set_text_callback(self, cb):
         if self._callback:

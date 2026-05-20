@@ -13,6 +13,7 @@ class ParaformerCallback(RecognitionCallback):
     def __init__(self):
         super().__init__()
         self.final_text = ""
+        self._sentences = []  # 累积所有句子
         self._on_text = None
 
     def set_on_text(self, callback):
@@ -21,7 +22,24 @@ class ParaformerCallback(RecognitionCallback):
     def on_event(self, result):
         sentence = result.get_sentence()
         if sentence and sentence.get("text"):
-            self.final_text = sentence["text"]
+            text = sentence["text"]
+            sentence_id = sentence.get("sentence_id", 0)
+            end_time = sentence.get("end_time")
+            is_final = end_time is not None and end_time > 0  # end_time 存在且 > 0 表示句子结束
+
+            # 使用 sentence_id 去重：只在句子最终确定时添加
+            if is_final:
+                # 检查是否已存在该 sentence_id
+                if not any(sid == sentence_id for sid, _ in self._sentences):
+                    self._sentences.append((sentence_id, text))
+                    self.final_text = "".join(t for _, t in self._sentences)
+            else:
+                # 实时预览（不保存）
+                preview = "".join(t for _, t in self._sentences) + text
+                if self._on_text:
+                    self._on_text(preview)
+                return
+
             if self._on_text:
                 self._on_text(self.final_text)
 
@@ -31,12 +49,13 @@ class AlibabaEngine(BaseEngine):
 
     name = "阿里云 Paraformer"
 
-    def __init__(self, api_key: str = ""):
+    def __init__(self, api_key: str = "", phrase_id: str = None):
         self._api_key = api_key
         self._recognition = None
         self._callback = None
         self._queue = queue.Queue()
         self._running = False
+        self._phrase_id = phrase_id  # 热词表ID（UUID格式）
 
     def initialize(self) -> bool:
         if not self._api_key:
@@ -50,6 +69,9 @@ class AlibabaEngine(BaseEngine):
     def set_api_key(self, key: str):
         self._api_key = key
 
+    def set_phrase_id(self, phrase_id: str):
+        self._phrase_id = phrase_id
+
     def start(self):
         self._callback = ParaformerCallback()
         self._queue = queue.Queue()
@@ -60,10 +82,20 @@ class AlibabaEngine(BaseEngine):
             format="pcm",
             sample_rate=16000,
             callback=self._callback,
-            enable_punctuation_prediction=True,  # 启用标点预测
-            enable_inverse_text_normalization=True,  # 启用数字/时间规范化
+            enable_punctuation_prediction=True,
+            enable_inverse_text_normalization=True,
         )
-        self._recognition.start()
+
+        # 传入热词表 phrase_id / vocabulary_id
+        # phrase_id → v1 格式（resources），vocabulary_id → v2 格式（parameters）
+        if self._phrase_id:
+            print(f"[热词] 传入 phrase_id / vocabulary_id: {self._phrase_id}")
+            self._recognition.start(
+                phrase_id=self._phrase_id,
+                vocabulary_id=self._phrase_id,
+            )
+        else:
+            self._recognition.start()
 
     def set_text_callback(self, cb):
         if self._callback:

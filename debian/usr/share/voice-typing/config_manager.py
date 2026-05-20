@@ -12,6 +12,8 @@ DEFAULT_CONFIG = {
     "local_model": "base",
     "hotkey": ["ctrl", "alt", "v"],
     "first_run": True,
+    "custom_vocabulary": [],  # 自定义热词列表：["CUDA", "GitHub", "Python"]
+    "phrase_id": "",  # 阿里云热词表ID（UUID，由VocabularyService创建）
 }
 
 
