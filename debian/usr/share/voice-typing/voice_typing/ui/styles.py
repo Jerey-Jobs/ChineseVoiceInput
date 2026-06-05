@@ -1,20 +1,19 @@
-"""暗黑主题 QSS 样式表 — 参考 wooho.cc 极简风格"""
+"""暗黑主题 QSS 样式表 — 参考 Typeless 极简风格"""
 
 DARK_STYLE = """
 /* 全局 */
 QWidget {
     background-color: #0d0d0d;
     color: #f0f0f0;
-    font-family: "Ubuntu", "Noto Sans CJK SC", sans-serif;
-    font-size: 14px;
+    font-size: 10pt;
 }
 
 /* 输入框 */
 QLineEdit {
     background: #1a1a1a;
     border: 1px solid #333;
-    border-radius: 6px;
-    padding: 8px 12px;
+    border-radius: 12px;
+    padding: 10px 14px;
     color: #f0f0f0;
     selection-background-color: #22c55e;
     selection-color: #0d0d0d;
@@ -23,13 +22,14 @@ QLineEdit:focus {
     border-color: #22c55e;
 }
 
-/* 按钮 */
+/* 按钮 — 胶囊形 */
 QPushButton {
     background: #1a1a1a;
     border: 1px solid #333;
-    border-radius: 6px;
-    padding: 8px 16px;
+    border-radius: 20px;
+    padding: 8px 20px;
     color: #f0f0f0;
+    font-weight: 500;
 }
 QPushButton:hover {
     border-color: #22c55e;
@@ -56,12 +56,31 @@ QPushButton#danger:hover {
     color: #0d0d0d;
 }
 
+/* 侧边导航按钮 */
+QPushButton#nav-btn {
+    background: transparent;
+    border: none;
+    border-radius: 12px;
+    padding: 10px 16px;
+    text-align: left;
+    font-weight: 500;
+    color: #999;
+}
+QPushButton#nav-btn:hover {
+    background: #1a1a1a;
+    color: #f0f0f0;
+}
+QPushButton#nav-btn[active="true"] {
+    background: #1a1a1a;
+    color: #22c55e;
+}
+
 /* 下拉框 */
 QComboBox {
     background: #1a1a1a;
     border: 1px solid #333;
-    border-radius: 6px;
-    padding: 8px 12px;
+    border-radius: 12px;
+    padding: 10px 14px;
     color: #f0f0f0;
     min-height: 20px;
 }
@@ -71,39 +90,49 @@ QComboBox::down-arrow { image: none; border: none; }
 QComboBox QAbstractItemView {
     background: #1a1a1a;
     border: 1px solid #333;
-    border-radius: 6px;
-    selection-background-color: #22c55e;
-    selection-color: #0d0d0d;
+    border-radius: 12px;
     padding: 4px;
+}
+QComboBox QAbstractItemView::item {
+    background: transparent;
+    padding: 8px 12px;
+}
+QComboBox QAbstractItemView::item:selected {
+    background: #22c55e;
+    color: #0d0d0d;
+}
+QComboBox QAbstractItemView::item:hover {
+    background: #222;
 }
 
 /* 进度条 */
 QProgressBar {
     border: none;
-    border-radius: 4px;
+    border-radius: 6px;
     background: #1a1a1a;
     text-align: center;
     color: #f0f0f0;
     height: 8px;
-    font-size: 12px;
+    font-size: 10pt;
 }
 QProgressBar::chunk {
     background: #22c55e;
-    border-radius: 4px;
+    border-radius: 6px;
 }
 
-/* 分组卡片 */
+/* 分组卡片 — 无边框大圆角 */
 QGroupBox {
-    border: 1px solid #222;
-    border-radius: 10px;
+    border: none;
+    border-radius: 16px;
+    background: #141414;
     margin-top: 26px;
-    padding: 24px 16px 16px 16px;
+    padding: 24px 20px 20px 20px;
     font-weight: bold;
-    font-size: 13px;
+    font-size: 10pt;
 }
 QGroupBox::title {
     subcontrol-origin: margin;
-    left: 16px;
+    left: 20px;
     padding: 0 8px;
     color: #888;
 }
@@ -146,15 +175,26 @@ QLabel {
 }
 QLabel#subtitle {
     color: #888;
-    font-size: 13px;
+    font-size: 10pt;
 }
 QLabel#status {
     color: #22c55e;
-    font-size: 13px;
+    font-size: 10pt;
 }
 QLabel#error {
     color: #ef4444;
-    font-size: 13px;
+    font-size: 10pt;
+}
+
+/* 统计卡片数值 */
+QLabel#stat-value {
+    font-size: 21pt;
+    font-weight: bold;
+    color: #f0f0f0;
+}
+QLabel#stat-label {
+    font-size: 10pt;
+    color: #888;
 }
 
 /* 分割线 */
@@ -164,6 +204,12 @@ QFrame#separator {
     max-height: 1px;
 }
 
+/* 侧边栏 */
+QWidget#sidebar {
+    background: #0a0a0a;
+    border-right: 1px solid #1a1a1a;
+}
+
 /* 滚动条 — 不滑动时隐藏，hover 时出现 */
 QScrollBar:vertical {
     background: transparent;
@@ -171,13 +217,13 @@ QScrollBar:vertical {
     margin: 0;
 }
 QScrollBar::handle:vertical {
-    background: rgba(51, 51, 51, 0);
+    background: rgba(51, 51, 51, 120);
     border-radius: 3px;
     min-height: 30px;
 }
 QScrollBar::handle:vertical:hover,
 QScrollBar:vertical:hover QScrollBar::handle:vertical {
-    background: rgba(51, 51, 51, 200);
+    background: rgba(80, 80, 80, 220);
 }
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
 
@@ -185,10 +231,10 @@ QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
 QToolTip {
     background: #1a1a1a;
     border: 1px solid #333;
-    border-radius: 6px;
+    border-radius: 10px;
     padding: 6px 10px;
     color: #f0f0f0;
-    font-size: 13px;
+    font-size: 10pt;
 }
 """
 
@@ -201,7 +247,7 @@ QWidget#overlay {
 QLabel#transcript {
     background: transparent;
     color: #f0f0f0;
-    font-size: 18px;
+    font-size: 10pt;
     padding: 16px 24px;
 }
 QLabel#indicator {

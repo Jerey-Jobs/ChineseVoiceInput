@@ -13,7 +13,6 @@ from PyQt5.QtWidgets import QApplication
 from voice_typing.core.config import load_config
 from voice_typing.core.hotkey import HotkeyManager
 from voice_typing.engine.alibaba import AlibabaEngine
-from voice_typing.engine.local import LocalEngine
 from voice_typing.engine.volcengine import VolcengineEngine
 from voice_typing.ui.styles import DARK_STYLE, OVERLAY_STYLE
 from voice_typing.ui.settings import SettingsWindow
@@ -47,6 +46,8 @@ class VoiceTypingApp(QObject):
         )
         self._hotkey.start()
 
+        self._recording_start_time = None
+
         self._settings = SettingsWindow(self._config, self._hotkey)
         self._settings.engine_changed.connect(self._on_engine_changed)
         self._overlay = OverlayWindow()
@@ -65,7 +66,10 @@ class VoiceTypingApp(QObject):
                 access_token=self._config.get("volc_asr_access_token", ""),
             )
         else:
-            self._engine = LocalEngine(model_size=self._config.get("local_model", "base"))
+            self._engine = AlibabaEngine(
+                api_key=self._config.get("alibaba_api_key", ""),
+                phrase_id=self._config.get("phrase_id", ""),
+            )
         self._engine.initialize()
 
     def _on_engine_changed(self, engine):
@@ -82,6 +86,7 @@ class VoiceTypingApp(QObject):
     @pyqtSlot()
     def _on_recording_start_main_thread(self):
         print("[DEBUG] _on_recording_start_main_thread 被调用（主线程）")
+        self._recording_start_time = __import__("time").time()
         self._overlay.start_recording()
         self._recorder = Recorder(self._engine, app_obj=self)
         print(f"[DEBUG] Recorder 创建完成: {self._recorder}")
@@ -112,19 +117,89 @@ class VoiceTypingApp(QObject):
     def _on_polish_done(self, polished_text):
         print("[DEBUG] 润色完成，粘贴最终文字")
         self._overlay.set_text(polished_text)
+        self._update_stats(polished_text)
         QTimer.singleShot(300, lambda: self._type_text(polished_text))
         QTimer.singleShot(2500, self._overlay.reset)
 
     def _run_polish(self, raw_text):
         engine = self._config.get("engine", "alibaba")
+        strength = self._config.get("polish_strength", "medium")
+        prompt = self._POLISH.get(strength, self._POLISH["medium"])
+        prompt += self._build_vocabulary_hint()
+
         if engine == "volcengine":
-            polished = self._polish_with_doubao(raw_text)
-        elif engine == "local":
-            polished = raw_text
+            polished = self._call_llm_doubao(prompt, raw_text)
         else:
-            polished = self._polish_with_qwen(raw_text)
+            polished = self._call_llm_qwen(prompt, raw_text)
+
+        if polished is None:
+            print("[润色] 失败，使用原始文字")
+            polished = raw_text
+
         polished = self._apply_alias_map(polished)
         self.polish_done.emit(polished)
+
+    @staticmethod
+    def _call_llm_qwen(system_prompt, user_text):
+        """调用 Qwen-Plus，成功返回文字，失败返回 None"""
+        try:
+            from dashscope import Generation
+            import dashscope
+            from voice_typing.core.config import load_config
+            config = load_config()
+            api_key = config.get("alibaba_api_key", "")
+            if not api_key:
+                return None
+            dashscope.api_key = api_key
+            response = Generation.call(
+                model="qwen-plus",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_text},
+                ],
+                result_format="message",
+            )
+            if response.status_code == 200:
+                result = response.output.choices[0].message.content.strip()
+                print(f"[Qwen] OK")
+                return result
+            else:
+                print(f"[Qwen] API 失败: {response.code} {response.message}")
+                return None
+        except Exception as e:
+            print(f"[Qwen] 异常: {e}")
+            return None
+
+    @staticmethod
+    def _call_llm_doubao(system_prompt, user_text):
+        """调用豆包，成功返回文字，失败返回 None"""
+        try:
+            from openai import OpenAI
+            from voice_typing.core.config import load_config
+            config = load_config()
+            api_key = config.get("doubao_api_key", "")
+            endpoint_id = config.get("doubao_endpoint_id", "")
+            if not api_key or not endpoint_id:
+                return None
+            client = OpenAI(
+                api_key=api_key,
+                base_url="https://ark.cn-beijing.volces.com/api/v3",
+            )
+            response = client.chat.completions.create(
+                model=endpoint_id,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_text},
+                ],
+                temperature=0.3,
+                timeout=30,
+            )
+            result = response.choices[0].message.content.strip()
+            print(f"[Doubao] OK")
+            return result
+        except Exception as e:
+            print(f"[Doubao] 异常: {e}")
+            return None
 
     def _apply_alias_map(self, text):
         """将发音别名替换为正确词汇（支持逗号分隔多个别名）"""
@@ -143,29 +218,137 @@ class VoiceTypingApp(QObject):
                     text = text.replace(alias, term)
         return text
 
-    _POLISH_PROMPTS = {
+    def _update_stats(self, text):
+        """更新使用统计和历史记录到 config"""
+        import time
+        from voice_typing.core.config import save_config
+
+        duration = 0
+        if self._recording_start_time:
+            duration = max(1, int(time.time() - self._recording_start_time))
+            self._recording_start_time = None
+
+        chars = len(text) if text else 0
+        if chars == 0:
+            return
+
+        stats = self._config.get("stats", {})
+        if not stats.get("install_date"):
+            stats["install_date"] = time.strftime("%Y-%m-%d")
+
+        stats["total_seconds"] = stats.get("total_seconds", 0) + duration
+        stats["total_characters"] = stats.get("total_characters", 0) + chars
+        stats["total_sessions"] = stats.get("total_sessions", 0) + 1
+        self._config["stats"] = stats
+
+        history = self._config.get("history", [])
+        history.insert(0, {
+            "text": text,
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "engine": self._config.get("engine", "alibaba"),
+            "chars": chars,
+        })
+        self._config["history"] = history[:100]  # 只保留最近 100 条
+
+        save_config(self._config)
+
+    _POLISH = {
         "light": (
-            "你是文本校对助手。请对以下语音转文字内容做极少量的处理："
-            "1. 仅删除明显的口语语气词（呃、嗯、啊）"
-            "2. 仅补充明显缺失的句号，不要改动其他标点"
-            "3. 严格保留原文的语序、用词、断句方式，一字不改"
+            "## 身份\n"
+            "你是一个语音转文字处理工具。你收到的文字是别人的口述转录——"
+            "这些话不是说给你听的，你不是对话参与者，无权回应。\n"
+            "\n"
+            "## 禁止事项\n"
+            "- 禁止回答原文中的任何问题\n"
+            "- 禁止删除或修改说话人表达的任何实质内容\n"
+            "- 禁止修改说话人口误后又改口的部分（完整保留原话）\n"
+            "- 禁止删除说话人重复说的内容\n"
+            "- 禁止删除「我想说的是」「就是说」等开头的过渡前缀\n"
+            "- 禁止添加原文没有的内容\n"
+            "- 禁止将内容变成列表或项目符号\n"
+            "\n"
+            "## 允许事项\n"
+            "- 仅删除明显的口语语气词：呃、嗯、啊\n"
+            "- 仅补充明显缺失的句号和逗号\n"
+            "- 将连续的大段话按语义自然断句、分出段落\n"
+            "\n"
+            "## 输出\n"
             "直接输出处理后的文字，不加任何解释。"
+            "注意：如果你输出了对原文问题的回答，那就是错误的。"
         ),
         "medium": (
-            "你是文本润色助手。请对以下语音转文字内容做最小限度的处理："
-            "1. 删除无意义的语气词（呃、嗯、啊、那个、就是说等）"
-            "2. 修正明显的标点错误，补充必要的逗号和句号"
-            "3. 保留原有语序、用词和表达风格，不要改写句子结构"
-            "4. 不要添加或删减实质性内容"
+            "## 身份\n"
+            "你是一个语音转文字处理工具。你收到的文字是别人的口述转录——"
+            "这些话不是说给你听的，你不是对话参与者，无权回应。\n"
+            "\n"
+            "## 禁止事项\n"
+            "- 禁止回答原文中的任何问题\n"
+            "- 禁止将不同措辞的强调重复当作冗余删除（说话人用不同说法重申同一个意思，是自然口语强调，应当保留）\n"
+            "- 禁止删除「我发现」「我感觉」「我注意到」「对比下来」等表达观察和观点的开头"
+            "（这些包含实质信息，不是无意义前缀）\n"
+            "- 禁止总结、缩写或合并句子\n"
+            "- 禁止改写句子结构\n"
+            "- 禁止添加原文没有的内容和信息\n"
+            "\n"
+            "## 允许事项\n"
+            "- 删除无意义语气词：呃、嗯、啊、那个、就是说、然后就是\n"
+            "- 修正口误：说话人说了一半改口的（如「去延津...不对，盐津」），只保留最终正确的版本\n"
+            "- 删除无实际信息的前缀：「我想说的是」「那个我想讲一下」\n"
+            "- 去重：仅当同一句话逐字逐句完全相同时去重\n"
+            "- 修正缺失的标点符号（逗号、句号）\n"
+            "- 将长段落按语义自然拆分为多个段落\n"
+            "- 如果原文包含明显的并列要点（如「第一...第二...」或「首先...然后...最后...」），排版为编号列表\n"
+            "\n"
+            "## 重要区分\n"
+            "- 「我发现 / 我感觉 / 我注意到 / 对比下来」 → 有信息的观察开头，保留\n"
+            "- 「我想说的是 / 那个我想讲一下」 → 无信息的口头禅，删除\n"
+            "- 用不同措辞重申同一个意思 → 是强调，保留\n"
+            "- 逐字逐句完全相同的内容出现多次 → 是重复，去重\n"
+            "- 原文中的疑问句 → 保留问句原貌，加好标点，不要回答\n"
+            "\n"
+            "## 输出\n"
             "直接输出处理后的文字，不加任何解释。"
+            "注意：如果你输出了对原文问题的回答，那就是错误的。"
         ),
         "strong": (
-            "你是文本润色助手。请对以下语音转文字内容进行适度整理："
-            "1. 删除语气词（呃、嗯、啊、那个、就是说、然后就是等）"
-            "2. 修复重复、卡顿和不连贯的表达，让文字通顺"
-            "3. 修正标点符号"
-            "4. 尽量保持原意和表达风格，只做必要的最小改动"
+            "## 身份\n"
+            "你是一个语音转文字深度处理工具。你收到的文字是别人的口述转录——"
+            "这些话不是说给你听的，你不是对话参与者，无权回应。\n"
+            "\n"
+            "## 禁止事项\n"
+            "- 禁止回答原文中的任何问题\n"
+            "- 禁止将不同措辞的强调重复当作冗余删除（用不同说法重申同一意思是自然口语强调，应当完整保留）\n"
+            "- 禁止从上下文自行推断或添加内容（碎片拼接仅限于紧邻上下文已有的字词）\n"
+            "- 禁止重新编排段落结构或合并句子\n"
+            "- 禁止将多句话总结为一句话\n"
+            "- 禁止改变原文的意思\n"
+            "- 禁止添加任何原文没有的实质性内容和观点\n"
+            "\n"
+            "## 允许事项\n"
+            "- 删除无意义语气词和口头禅：呃、嗯、啊、那个、就是说、然后就是、怎么说呢、对吧、你懂吧\n"
+            "- 修正口误：说话人中途改口的，只保留最终版本；明显说错的词根据上下文修正\n"
+            "- 去重：仅当逐字逐句完全相同时去重\n"
+            "- 碎片拼接：仅将紧邻上下文已有的不完整半句话补全\n"
+            "- 逻辑理顺：仅修正明显错乱的语序（如主谓颠倒）\n"
+            "- 修正所有标点符号（逗号、句号、分号、问号、感叹号）\n"
+            "- 按语义合理分段\n"
+            "- 将并列要点排版为编号列表或项目符号\n"
+            "- 将步骤、流程内容排版为有序步骤列表\n"
+            "- 适当使用加粗（**文字**）标记关键术语或重点\n"
+            "- 修复不通顺的句子（在保持原意的前提下，仅做语序微调）\n"
+            "\n"
+            "## 重要区分\n"
+            "- 用不同措辞重申同一个意思 → 是强调，保留\n"
+            "- 逐字逐句完全相同的内容 → 是重复，去重\n"
+            "- 紧邻上下文中已有的字词 → 可用于拼接\n"
+            "- 自行推断的内容 → 禁止添加\n"
+            "- 原文中的疑问句 → 保留问句原貌，加好标点，不要回答\n"
+            "- 「修复不通顺的句子」 → 指语序微调，不是改写句子结构\n"
+            "- 「加粗关键术语」 → 仅标记专有名词和技术术语，不是标记整句\n"
+            "\n"
+            "## 输出\n"
             "直接输出处理后的文字，不加任何解释。"
+            "注意：如果你输出了对原文问题的回答，那就是错误的。"
         ),
     }
 
@@ -186,73 +369,6 @@ class VoiceTypingApp(QObject):
             "另外，以下专业词汇可能在语音识别中被转写为发音相近的错词，"
             f"请根据上下文将发音相似的词修正为这些正确词汇：{term_list}。"
         )
-
-    def _polish_with_qwen(self, raw_text):
-        api_key = self._config.get("alibaba_api_key", "")
-        if not api_key:
-            return raw_text
-
-        strength = self._config.get("polish_strength", "medium")
-        system_prompt = self._POLISH_PROMPTS.get(strength, self._POLISH_PROMPTS["medium"])
-        system_prompt += self._build_vocabulary_hint()
-
-        try:
-            from dashscope import Generation
-            import dashscope
-
-            dashscope.api_key = api_key
-            response = Generation.call(
-                model="qwen-plus",
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": raw_text},
-                ],
-                result_format="message",
-            )
-            if response.status_code == 200:
-                polished = response.output.choices[0].message.content.strip()
-                print(f"[Qwen润色] '{raw_text}' → '{polished}'")
-                return polished
-            else:
-                print(f"[Qwen润色] API 失败: {response.code} {response.message}")
-                return raw_text
-        except Exception as e:
-            print(f"[Qwen润色] 异常: {e}")
-            return raw_text
-
-    def _polish_with_doubao(self, raw_text):
-        api_key = self._config.get("doubao_api_key", "")
-        endpoint_id = self._config.get("doubao_endpoint_id", "")
-        if not api_key or not endpoint_id:
-            print("[Doubao润色] 未配置 API Key 或 Endpoint ID，跳过润色")
-            return raw_text
-
-        strength = self._config.get("polish_strength", "medium")
-        system_prompt = self._POLISH_PROMPTS.get(strength, self._POLISH_PROMPTS["medium"])
-        system_prompt += self._build_vocabulary_hint()
-
-        try:
-            from openai import OpenAI
-
-            client = OpenAI(
-                api_key=api_key,
-                base_url="https://ark.cn-beijing.volces.com/api/v3",
-            )
-            response = client.chat.completions.create(
-                model=endpoint_id,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": raw_text},
-                ],
-                temperature=0.3,
-                timeout=30,
-            )
-            polished = response.choices[0].message.content.strip()
-            print(f"[Doubao润色] '{raw_text}' → '{polished}'")
-            return polished
-        except Exception as e:
-            print(f"[Doubao润色] 异常: {e}")
-            return raw_text
 
     _TERMINAL_CLASSES = [
         "gnome-terminal", "kitty", "alacritty", "xfce4-terminal",
@@ -343,6 +459,11 @@ def main():
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
     app.setStyleSheet(DARK_STYLE + OVERLAY_STYLE)
+
+    # 允许 Ctrl+C 退出（PyQt 默认吞掉 SIGINT）
+    import signal
+    signal.signal(signal.SIGINT, lambda sig, frame: app.quit())
+
     print("[DEBUG] QApplication 已创建")
     voice_app = VoiceTypingApp()
     print("[DEBUG] VoiceTypingApp 已初始化")

@@ -1,42 +1,36 @@
-"""设置主窗口"""
+"""VoiceType 主窗口 — 侧边导航 + 多页面"""
 
 import subprocess
-import threading
 import os
 
-from PyQt5.QtCore import Qt, pyqtSignal, QTimer, QByteArray
+from PyQt5.QtCore import Qt, pyqtSignal, QTimer, QByteArray, QSize, QRect
 from PyQt5.QtGui import QIcon, QPixmap, QPainter, QColor, QBrush
 from PyQt5.QtSvg import QSvgRenderer
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QLabel,
-    QLineEdit, QComboBox, QPushButton, QProgressBar,
+    QLineEdit, QComboBox, QPushButton,
     QSystemTrayIcon, QMenu, QAction, QApplication, QMessageBox,
     QListWidget, QListWidgetItem, QScrollArea, QCheckBox,
-    QRadioButton, QButtonGroup,
+    QRadioButton, QButtonGroup, QStackedWidget, QFrame,
+    QStyledItemDelegate, QStyle,
 )
 
 from voice_typing.core.config import load_config, save_config
 from voice_typing.engine.alibaba import AlibabaEngine
-from voice_typing.engine.local import LocalEngine, download_model
 from voice_typing.engine.volcengine import VolcengineEngine
 from voice_typing.core.vocabulary import sync_vocabulary
 
 
 def _make_tray_icon():
     """加载麦克风图标作为托盘图标"""
-    import os
-    # 获取图标文件路径（相对于当前文件）
     current_dir = os.path.dirname(os.path.abspath(__file__))
     icon_path = os.path.join(current_dir, "image", "20260518-213528.jpg")
 
-    # 如果图标文件存在，使用它；否则使用默认绘制的图标
     if os.path.exists(icon_path):
         pix = QPixmap(icon_path)
-        # 缩放到合适的托盘图标尺寸
         pix = pix.scaled(32, 32, Qt.KeepAspectRatio, Qt.SmoothTransformation)
         return QIcon(pix)
     else:
-        # 备用方案：绘制简单的绿色圆形图标
         pix = QPixmap(32, 32)
         pix.fill(Qt.transparent)
         p = QPainter(pix)
@@ -44,7 +38,6 @@ def _make_tray_icon():
         p.setBrush(QBrush(QColor(34, 197, 94)))
         p.setPen(Qt.NoPen)
         p.drawEllipse(4, 4, 24, 24)
-        # 白色麦克风简化符号
         p.setBrush(QBrush(QColor(13, 13, 13)))
         p.drawRoundedRect(13, 7, 6, 10, 2, 2)
         p.drawRoundedRect(11, 14, 10, 3, 1, 1)
@@ -55,7 +48,6 @@ def _make_tray_icon():
 def _make_eye_icon(visible=True):
     """生成眼睛图标（SVG）"""
     if visible:
-        # 睁眼图标
         svg_data = """
         <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
             <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"
@@ -63,7 +55,6 @@ def _make_eye_icon(visible=True):
         </svg>
         """
     else:
-        # 闭眼图标
         svg_data = """
         <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
             <path d="M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l2.16 2.16C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z"
@@ -80,101 +71,548 @@ def _make_eye_icon(visible=True):
     return QIcon(pixmap)
 
 
-class SettingsWindow(QWidget):
-    """VoiceType 设置主窗口"""
+CARD_BG = QColor("#1a1a1a")
+CARD_HOVER = QColor("#222222")
+CARD_SELECTED = QColor("#22c55e")
+CARD_TEXT = QColor("#f0f0f0")
+CARD_TEXT_SELECTED = QColor("#0d0d0d")
+CARD_RADIUS = 10
+CARD_PADDING_H = 14
+CARD_PADDING_V = 12
+CARD_MARGIN_V = 4
+CARD_MAX_LINES = 3
+CARD_MIN_HEIGHT = 48
 
-    # 信号：引擎变更时通知 main
+
+class CardDelegate(QStyledItemDelegate):
+    """卡片式列表项 — 自适应高度，最多 3 行，超出省略号"""
+
+    def _text_width(self, option):
+        w = option.rect.width()
+        return max(w - 2 * CARD_PADDING_H, 100)
+
+    def _calc_lines(self, fm, text, width):
+        if not text:
+            return 1, text
+        r = fm.boundingRect(QRect(0, 0, int(width), 99999), Qt.TextWordWrap, text)
+        line_h = fm.lineSpacing()
+        needed = max(1, (r.height() + line_h - 1) // line_h)
+        if needed <= CARD_MAX_LINES:
+            return needed, text
+        # 二分查找截断点 + 省略号
+        lo, hi = 0, len(text)
+        while lo < hi:
+            mid = (lo + hi + 1) // 2
+            candidate = text[:mid] + "..."
+            cr = fm.boundingRect(QRect(0, 0, int(width), 99999), Qt.TextWordWrap, candidate)
+            cl = max(1, (cr.height() + line_h - 1) // line_h)
+            if cl <= CARD_MAX_LINES:
+                lo = mid
+            else:
+                hi = mid - 1
+        return CARD_MAX_LINES, text[:lo] + "..." if lo > 0 else "..."
+
+    def paint(self, painter, option, index):
+        painter.save()
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        rect = option.rect
+        selected = option.state & QStyle.State_Selected
+        hovered = option.state & QStyle.State_MouseOver
+
+        if selected:
+            bg = CARD_SELECTED
+        elif hovered:
+            bg = CARD_HOVER
+        else:
+            bg = CARD_BG
+
+        fm = painter.fontMetrics()
+        text = index.data(Qt.DisplayRole) or ""
+        text_w = self._text_width(option)
+        _, display_text = self._calc_lines(fm, text, text_w)
+
+        line_h = fm.lineSpacing()
+        r = fm.boundingRect(QRect(0, 0, int(text_w), 99999), Qt.TextWordWrap, display_text)
+        text_h = max(line_h, r.height())
+        card_h = text_h + 2 * CARD_PADDING_V
+
+        content_rect = QRect(
+            rect.x(),
+            rect.y() + CARD_MARGIN_V,
+            rect.width(),
+            card_h,
+        )
+        painter.setBrush(QBrush(bg))
+        painter.setPen(Qt.NoPen)
+        painter.drawRoundedRect(content_rect, CARD_RADIUS, CARD_RADIUS)
+
+        text_color = CARD_TEXT_SELECTED if selected else CARD_TEXT
+        painter.setPen(text_color)
+        text_rect = content_rect.adjusted(CARD_PADDING_H, CARD_PADDING_V, -CARD_PADDING_H, -CARD_PADDING_V)
+        painter.drawText(text_rect, Qt.AlignLeft | Qt.AlignVCenter | Qt.TextWordWrap, display_text)
+
+        painter.restore()
+
+    def sizeHint(self, option, index):
+        text = index.data(Qt.DisplayRole) or ""
+        fm = option.fontMetrics
+        text_w = self._text_width(option)
+        _, display_text = self._calc_lines(fm, text, text_w)
+        line_h = fm.lineSpacing()
+        r = fm.boundingRect(QRect(0, 0, int(text_w), 99999), Qt.TextWordWrap, display_text)
+        text_h = max(line_h, r.height())
+        card_h = text_h + 2 * CARD_PADDING_V
+        return QSize(0, card_h + 2 * CARD_MARGIN_V)
+
+
+class SettingsWindow(QWidget):
+    """VoiceType 主窗口 — 侧边导航 + 多页面"""
+
     engine_changed = pyqtSignal(object)
-    # 信号：下载进度更新（从后台线程安全发射）
-    download_progress = pyqtSignal(int, str)
 
     def __init__(self, config, hotkey_manager):
         super().__init__()
         self._config = config
         self._hotkey = hotkey_manager
         self._engine = None
-        self._downloading = False
+        self._nav_btns = []
 
         self._init_ui()
         self._init_tray()
         self._apply_config()
         self._create_engine()
+        self._select_nav(0)  # 默认显示主页
 
-        # 连接下载进度信号
-        self.download_progress.connect(self._update_download_progress)
-
-    # ---------- UI 构建 ----------
+    # ---------- UI 框架 ----------
 
     def _init_ui(self):
         self.setWindowTitle("VoiceType")
-        self.setFixedSize(520, 750)
+        self.setMinimumSize(1000, 620)
+        self.resize(1000, 680)
         self.setWindowIcon(_make_tray_icon())
 
-        root = QVBoxLayout(self)
-        root.setContentsMargins(20, 20, 20, 20)
-        root.setSpacing(12)
+        root = QHBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
 
-        # 标题
-        title = QLabel("VoiceType")
-        title.setStyleSheet("font-size: 22px; font-weight: bold; color: #f0f0f0;")
-        subtitle = QLabel("语音输入设置")
-        subtitle.setObjectName("subtitle")
-        root.addWidget(title)
-        root.addWidget(subtitle)
-        root.addSpacing(6)
+        # ---- 侧边栏 ----
+        sidebar = QWidget()
+        sidebar.setObjectName("sidebar")
+        sidebar.setFixedWidth(200)
+        sidebar_layout = QVBoxLayout(sidebar)
+        sidebar_layout.setContentsMargins(12, 16, 12, 16)
+        sidebar_layout.setSpacing(4)
 
-        # 创建滚动区域
+        # Logo
+        from voice_typing import __version__, __dev__
+        logo = QLabel("VoiceType")
+        logo.setStyleSheet("font-size: 16pt; font-weight: bold; color: #f0f0f0; padding: 8px 8px 4px 8px;")
+        sidebar_layout.addWidget(logo)
+
+        ver_text = f"v{__version__}-dev" if __dev__ else f"v{__version__}"
+        ver_label = QLabel(ver_text)
+        ver_label.setStyleSheet("font-size: 10pt; color: #666; padding: 0 8px 12px 8px;")
+        sidebar_layout.addWidget(ver_label)
+
+        sidebar_layout.addSpacing(8)
+
+        # 导航按钮
+        nav_items = [
+            ("⌂  主界面", 0),
+            ("⧖  历史记录", 1),
+            ("☆  词典", 2),
+            ("⚙  设置", 3),
+        ]
+        for label, idx in nav_items:
+            btn = QPushButton(label)
+            btn.setObjectName("nav-btn")
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.clicked.connect(lambda checked, i=idx: self._select_nav(i))
+            sidebar_layout.addWidget(btn)
+            self._nav_btns.append(btn)
+
+        sidebar_layout.addStretch()
+
+        # 引擎状态指示
+        status_row = QHBoxLayout()
+        self._sidebar_indicator = QLabel()
+        self._sidebar_indicator.setFixedSize(8, 8)
+        self._sidebar_indicator.setStyleSheet(
+            "background: #22c55e; border-radius: 4px; min-width: 8px; max-width: 8px; min-height: 8px; max-height: 8px;"
+        )
+        status_row.addWidget(self._sidebar_indicator)
+        self._sidebar_engine_label = QLabel("引擎未就绪")
+        self._sidebar_engine_label.setStyleSheet("font-size: 10pt; color: #888;")
+        status_row.addWidget(self._sidebar_engine_label)
+        status_row.addStretch()
+        sidebar_layout.addLayout(status_row)
+
+        root.addWidget(sidebar)
+
+        # ---- 分割线 ----
+        sep = QFrame()
+        sep.setFrameShape(QFrame.VLine)
+        sep.setStyleSheet("QFrame { color: #1a1a1a; }")
+        root.addWidget(sep)
+
+        # ---- 内容区 ----
+        self._stack = QStackedWidget()
+        self._stack.addWidget(self._build_home_page())
+        self._stack.addWidget(self._build_history_page())
+        self._stack.addWidget(self._build_dictionary_page())
+        self._stack.addWidget(self._build_settings_page())
+        root.addWidget(self._stack)
+
+    # ---------- 导航 ----------
+
+    def _select_nav(self, index):
+        self._stack.setCurrentIndex(index)
+        for i, btn in enumerate(self._nav_btns):
+            btn.setProperty("active", i == index)
+            btn.style().unpolish(btn)
+            btn.style().polish(btn)
+        if index == 0:
+            self._refresh_home()
+        elif index == 1:
+            self._refresh_history()
+
+    # ---------- Page 0: 主界面 ----------
+
+    def _build_home_page(self):
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(40, 36, 40, 36)
+        layout.setSpacing(16)
+
+        title = QLabel("使用统计")
+        title.setStyleSheet("font-size: 16pt; font-weight: bold; color: #f0f0f0;")
+        layout.addWidget(title)
+
+        layout.addSpacing(8)
+
+        # 4 个统计卡片
+        cards_widget = QWidget()
+        cards_layout = QHBoxLayout(cards_widget)
+        cards_layout.setContentsMargins(0, 0, 0, 0)
+        cards_layout.setSpacing(16)
+
+        stats_defs = [
+            ("total_seconds", "使用时长", "分钟"),
+            ("total_characters", "输入字数", "字"),
+            ("total_sessions", "录音次数", "次"),
+            ("efficiency", "输入效率", "字/分钟"),
+        ]
+
+        self._stat_labels = {}
+        for key, label_text, unit in stats_defs:
+            card = self._make_stat_card(key, label_text, unit)
+            cards_layout.addWidget(card, 1)
+
+        layout.addWidget(cards_widget)
+
+        layout.addSpacing(16)
+
+        # 当前引擎信息
+        engine_card = QGroupBox("当前状态")
+        elayout = QVBoxLayout(engine_card)
+        elayout.setSpacing(8)
+
+        self._home_engine_name = QLabel("")
+        self._home_engine_name.setStyleSheet("font-size: 10pt; font-weight: bold;")
+        elayout.addWidget(self._home_engine_name)
+
+        self._home_engine_status = QLabel("")
+        self._home_engine_status.setObjectName("subtitle")
+        elayout.addWidget(self._home_engine_status)
+
+        layout.addWidget(engine_card)
+        layout.addStretch()
+
+        return page
+
+    def _make_stat_card(self, key, label_text, unit):
+        card = QGroupBox("")
+        card.setStyleSheet("QGroupBox { border: none; border-radius: 16px; background: #141414; padding: 20px; }")
+        layout = QVBoxLayout(card)
+        layout.setSpacing(8)
+
+        label = QLabel(label_text)
+        label.setObjectName("stat-label")
+        layout.addWidget(label)
+
+        value_label = QLabel("--")
+        value_label.setObjectName("stat-value")
+        layout.addWidget(value_label)
+
+        unit_label = QLabel(unit)
+        unit_label.setStyleSheet("font-size: 10pt; color: #666;")
+        layout.addWidget(unit_label)
+
+        self._stat_labels[key] = value_label
+        return card
+
+    def _refresh_home(self):
+        """刷新主页统计和引擎状态"""
+        stats = self._config.get("stats", {})
+        total_sec = stats.get("total_seconds", 0)
+        total_chars = stats.get("total_characters", 0)
+        total_sessions = stats.get("total_sessions", 0)
+        total_min = total_sec / 60.0
+
+        self._stat_labels["total_seconds"].setText(f"{total_min:.1f}")
+        self._stat_labels["total_characters"].setText(str(total_chars))
+        self._stat_labels["total_sessions"].setText(str(total_sessions))
+
+        if total_min > 0 and total_chars > 0:
+            efficiency = total_chars / total_min
+            self._stat_labels["efficiency"].setText(f"{efficiency:.0f}")
+        else:
+            self._stat_labels["efficiency"].setText("--")
+
+        if self._engine and self._engine.is_available():
+            self._home_engine_name.setText(f"引擎已就绪：{self._engine.name}")
+            self._home_engine_status.setText("快捷键可用，随时可以开始语音输入")
+            self._sidebar_indicator.setStyleSheet(
+                "background: #22c55e; border-radius: 4px; min-width: 8px; max-width: 8px; min-height: 8px; max-height: 8px;"
+            )
+            self._sidebar_engine_label.setText("引擎就绪")
+        else:
+            self._home_engine_name.setText("引擎未就绪")
+            self._home_engine_status.setText("请到「设置」页面配置 API Key 或下载本地模型")
+            self._sidebar_indicator.setStyleSheet(
+                "background: #666; border-radius: 4px; min-width: 8px; max-width: 8px; min-height: 8px; max-height: 8px;"
+            )
+            self._sidebar_engine_label.setText("未就绪")
+
+    # ---------- Page 1: 历史记录 ----------
+
+    def _build_history_page(self):
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(40, 36, 40, 36)
+        layout.setSpacing(16)
+
+        title_row = QHBoxLayout()
+        title = QLabel("历史记录")
+        title.setStyleSheet("font-size: 16pt; font-weight: bold; color: #f0f0f0;")
+        title_row.addWidget(title)
+        title_row.addStretch()
+
+        clear_btn = QPushButton("清空")
+        clear_btn.clicked.connect(self._clear_history)
+        title_row.addWidget(clear_btn)
+        layout.addLayout(title_row)
+
+        hint = QLabel("所有历史记录仅保存在本地设备上")
+        hint.setObjectName("subtitle")
+        layout.addWidget(hint)
+
+        self._history_list = QListWidget()
+        self._history_list.setStyleSheet("""
+            QListWidget {
+                background: #141414;
+                border: none;
+                border-radius: 12px;
+                padding: 8px;
+            }
+        """)
+        self._history_list.setItemDelegate(CardDelegate())
+        self._history_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._history_list.setVerticalScrollMode(QListWidget.ScrollPerPixel)
+        layout.addWidget(self._history_list)
+
+        copy_btn = QPushButton("复制选中")
+        copy_btn.clicked.connect(self._copy_history_item)
+        copy_btn.setFixedWidth(120)
+        copy_row = QHBoxLayout()
+        copy_row.addWidget(copy_btn)
+        copy_row.addStretch()
+        layout.addLayout(copy_row)
+
+        return page
+
+    def _refresh_history(self):
+        self._history_list.clear()
+        for entry in self._config.get("history", []):
+            text = entry.get("text", "")
+            ts = entry.get("timestamp", "")
+            engine = entry.get("engine", "")
+            chars = entry.get("chars", 0)
+            display = f"{text}\n"
+            item = QListWidgetItem(display)
+            item.setData(Qt.UserRole, text)
+            self._history_list.addItem(item)
+
+    def _copy_history_item(self):
+        item = self._history_list.currentItem()
+        if item:
+            text = item.data(Qt.UserRole)
+            subprocess.run(["xclip", "-selection", "clipboard"], input=text.encode(), timeout=2)
+
+    def _clear_history(self):
+        self._config["history"] = []
+        save_config(self._config)
+        self._history_list.clear()
+
+    # ---------- Page 2: 词典 ----------
+
+    def _build_dictionary_page(self):
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(40, 36, 40, 36)
+        layout.setSpacing(16)
+
+        title = QLabel("自定义词典")
+        title.setStyleSheet("font-size: 16pt; font-weight: bold; color: #f0f0f0;")
+        layout.addWidget(title)
+
+        hint = QLabel("添加专业词汇，提升 ASR 识别准确率")
+        hint.setObjectName("subtitle")
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
+
+        self._dict_list = QListWidget()
+        self._dict_list.setStyleSheet("""
+            QListWidget {
+                background: #141414;
+                border: none;
+                border-radius: 12px;
+                padding: 8px;
+            }
+        """)
+        self._dict_list.setItemDelegate(CardDelegate())
+        self._dict_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._dict_list.setVerticalScrollMode(QListWidget.ScrollPerPixel)
+        layout.addWidget(self._dict_list)
+
+        term_row = QHBoxLayout()
+        self._dict_term_input = QLineEdit()
+        self._dict_term_input.setPlaceholderText("输入词汇（如：CUDA、rviz）")
+        term_row.addWidget(self._dict_term_input)
+
+        add_btn = QPushButton("添加")
+        add_btn.setObjectName("accent")
+        add_btn.clicked.connect(self._add_dict_item)
+        add_btn.setFixedWidth(80)
+        term_row.addWidget(add_btn)
+        layout.addLayout(term_row)
+
+        del_row = QHBoxLayout()
+        del_btn = QPushButton("删除选中")
+        del_btn.clicked.connect(self._delete_dict_item)
+        del_row.addWidget(del_btn)
+        del_row.addStretch()
+
+        self._dict_status = QLabel("")
+        self._dict_status.setObjectName("status")
+        del_row.addWidget(self._dict_status)
+        layout.addLayout(del_row)
+
+        layout.addStretch()
+        return page
+
+    def _refresh_dict_list(self):
+        self._dict_list.clear()
+        for item_data in self._config.get("custom_vocabulary", []):
+            if isinstance(item_data, dict):
+                term = item_data.get("term", "")
+            else:
+                term = str(item_data)
+            list_item = QListWidgetItem(term)
+            list_item.setData(Qt.UserRole, {"term": term})
+            self._dict_list.addItem(list_item)
+
+    def _add_dict_item(self):
+        term = self._dict_term_input.text().strip()
+        if not term:
+            self._dict_status.setText("请输入词汇")
+            QTimer.singleShot(2000, lambda: self._dict_status.setText(""))
+            return
+
+        for i in range(self._dict_list.count()):
+            data = self._dict_list.item(i).data(Qt.UserRole)
+            if data and data.get("term") == term:
+                self._dict_status.setText(f"'{term}' 已存在")
+                QTimer.singleShot(2000, lambda: self._dict_status.setText(""))
+                return
+
+        item = QListWidgetItem(term)
+        item.setData(Qt.UserRole, {"term": term})
+        self._dict_list.addItem(item)
+        self._dict_term_input.clear()
+        self._save_dict()
+
+    def _delete_dict_item(self):
+        item = self._dict_list.currentItem()
+        if item:
+            self._dict_list.takeItem(self._dict_list.row(item))
+            self._save_dict()
+
+    def _save_dict(self):
+        vocab = []
+        for i in range(self._dict_list.count()):
+            data = self._dict_list.item(i).data(Qt.UserRole)
+            term = data.get("term") if data else self._dict_list.item(i).text()
+            vocab.append({"term": term})
+        self._config["custom_vocabulary"] = vocab
+
+        # 同步热词表
+        engine_type = self._config.get("engine", "alibaba")
+        api_key = self._config.get("alibaba_api_key", "")
+        hotwords = [v["term"] for v in vocab]
+        if engine_type == "alibaba" and hotwords and api_key:
+            phrase_id = sync_vocabulary(
+                api_key=api_key,
+                hotwords=hotwords,
+                phrase_id=self._config.get("phrase_id", ""),
+            )
+            if phrase_id:
+                self._config["phrase_id"] = phrase_id
+
+        save_config(self._config)
+        self._create_engine()
+        self._dict_status.setText("已保存")
+        QTimer.singleShot(2000, lambda: self._dict_status.setText(""))
+
+    # ---------- Page 3: 设置 ----------
+
+    def _build_settings_page(self):
+        page = QWidget()
+        outer = QVBoxLayout(page)
+        outer.setContentsMargins(0, 0, 0, 0)
+
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QScrollArea.NoFrame)
         scroll.setStyleSheet("QScrollArea { background: transparent; }")
 
-        # 滚动内容容器
-        scroll_content = QWidget()
-        scroll_layout = QVBoxLayout(scroll_content)
-        scroll_layout.setContentsMargins(0, 0, 0, 0)
-        scroll_layout.setSpacing(12)
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(40, 36, 40, 36)
+        layout.setSpacing(16)
 
-        # 卡片 1: 引擎选择
+        title = QLabel("设置")
+        title.setStyleSheet("font-size: 16pt; font-weight: bold; color: #f0f0f0;")
+        layout.addWidget(title)
+
+        # 引擎选择
         engine_card = QGroupBox("引擎选择")
         elayout = QVBoxLayout(engine_card)
 
         self._engine_combo = QComboBox()
         self._engine_combo.addItem("阿里云 Paraformer（云端）", "alibaba")
-        self._engine_combo.addItem("火山引擎 BigModel（云端）- 开发中", "volcengine")
-        self._engine_combo.addItem("faster-whisper（本地）", "local")
+        self._engine_combo.addItem("火山引擎 BigModel（云端）", "volcengine")
         self._engine_combo.currentIndexChanged.connect(self._on_engine_preview)
         elayout.addWidget(self._engine_combo)
 
-        # 本地模型设置（默认隐藏）
-        self._local_widget = QWidget()
-        llayout = QVBoxLayout(self._local_widget)
-        llayout.setContentsMargins(0, 0, 0, 0)
-        llayout.setSpacing(8)
-        self._model_combo = QComboBox()
-        self._model_combo.addItems(["tiny (39MB)", "base (74MB)", "small (244MB)"])
-        self._model_combo.setCurrentIndex(1)  # base
-        llayout.addWidget(self._model_combo)
-        self._download_btn = QPushButton("下载模型")
-        self._download_btn.setObjectName("accent")
-        self._download_btn.clicked.connect(self._download_model)
-        llayout.addWidget(self._download_btn)
-        elayout.addWidget(self._local_widget)
-        self._local_widget.hide()
+        layout.addWidget(engine_card)
 
-        self._progress_bar = QProgressBar()
-        self._progress_bar.setRange(0, 100)
-        self._progress_bar.setValue(0)
-        self._progress_bar.hide()
-        elayout.addWidget(self._progress_bar)
-
-        scroll_layout.addWidget(engine_card)
-
-        # 卡片 2: API 配置（动态切换：阿里云 / 火山引擎）
+        # API 配置
         self._api_card = QGroupBox("API 配置")
         alayout = QVBoxLayout(self._api_card)
 
-        # --- 阿里云 API Key 输入（带眼睛按钮） ---
+        # 阿里云
         self._alibaba_api_widget = QWidget()
         api_wrapper = QWidget(self._alibaba_api_widget)
         api_wrapper.setFixedHeight(40)
@@ -195,6 +633,7 @@ class SettingsWindow(QWidget):
         self._eye_btn.setCursor(Qt.PointingHandCursor)
         self._eye_btn.setToolTip("显示/隐藏 API Key")
         self._eye_btn.clicked.connect(self._toggle_api_visibility)
+        self._api_input.textChanged.connect(self._on_api_key_changed)
 
         def resize_api_widgets():
             w = api_wrapper.width()
@@ -208,7 +647,7 @@ class SettingsWindow(QWidget):
         alibaba_api_layout.addWidget(api_wrapper)
         alayout.addWidget(self._alibaba_api_widget)
 
-        # --- 火山引擎 API 输入（ASR + 豆包润色） ---
+        # 火山引擎
         self._volc_api_widget = QWidget()
         volc_layout = QVBoxLayout(self._volc_api_widget)
         volc_layout.setContentsMargins(0, 0, 0, 0)
@@ -248,99 +687,52 @@ class SettingsWindow(QWidget):
         self._api_status.setObjectName("status")
         alayout.addWidget(self._api_status)
 
-        scroll_layout.addWidget(self._api_card)
+        layout.addWidget(self._api_card)
 
-        # 卡片 3: 快捷键
+        # 快捷键
         hotkey_card = QGroupBox("快捷键")
         hlayout = QVBoxLayout(hotkey_card)
-
         hrow = QHBoxLayout()
         self._hotkey_btn = QPushButton(self._hotkey_display())
         self._hotkey_btn.setMinimumHeight(44)
         self._hotkey_btn.clicked.connect(self._record_hotkey)
         hrow.addWidget(self._hotkey_btn)
-
         self._clear_hotkey_btn = QPushButton("清除")
         self._clear_hotkey_btn.clicked.connect(self._clear_hotkey)
         hrow.addWidget(self._clear_hotkey_btn)
         hlayout.addLayout(hrow)
+        layout.addWidget(hotkey_card)
 
-        scroll_layout.addWidget(hotkey_card)
-
-        # 卡片 4: 润色强度
+        # 润色强度
         polish_card = QGroupBox("润色强度")
         playout = QVBoxLayout(polish_card)
         playout.setSpacing(6)
 
         self._polish_group = QButtonGroup(self)
-
         self._polish_light = QRadioButton("轻度 — 仅删明显语气词，一字不改")
         self._polish_medium = QRadioButton("中度 — 删语气词、修正标点，保留原文（推荐）")
         self._polish_strong = QRadioButton("重度 — 删语气词、理顺表达、修正标点")
-
         self._polish_group.addButton(self._polish_light, 0)
         self._polish_group.addButton(self._polish_medium, 1)
         self._polish_group.addButton(self._polish_strong, 2)
-
         playout.addWidget(self._polish_light)
         playout.addWidget(self._polish_medium)
         playout.addWidget(self._polish_strong)
-
         polish_hint = QLabel("ASR 识别后调用大模型润色文本的力度（服务商在上方选择）")
         polish_hint.setObjectName("subtitle")
         playout.addWidget(polish_hint)
+        layout.addWidget(polish_card)
 
-        scroll_layout.addWidget(polish_card)
-
-        # 卡片 5: 自定义词库
-        vocab_card = QGroupBox("自定义词库")
-        vlayout = QVBoxLayout(vocab_card)
-        vlayout.setSpacing(8)
-
-        vocab_hint = QLabel("添加专业词汇，ASR 识别和 LLM 润色时会自动修正")
-        vocab_hint.setObjectName("subtitle")
-        vocab_hint.setWordWrap(True)
-        vlayout.addWidget(vocab_hint)
-
-        # 词库列表
-        self._vocab_list = QListWidget()
-        self._vocab_list.setMaximumHeight(120)
-        vlayout.addWidget(self._vocab_list)
-
-        # 输入行: 词汇 + 添加按钮
-        term_row = QHBoxLayout()
-        self._vocab_term_input = QLineEdit()
-        self._vocab_term_input.setPlaceholderText("输入词汇（如：rviz）")
-        term_row.addWidget(self._vocab_term_input)
-
-        add_vocab_btn = QPushButton("添加")
-        add_vocab_btn.setObjectName("accent")
-        add_vocab_btn.setFixedWidth(80)
-        add_vocab_btn.clicked.connect(self._add_vocabulary)
-        term_row.addWidget(add_vocab_btn)
-        vlayout.addLayout(term_row)
-
-        # 删除按钮
-        del_vocab_btn = QPushButton("删除选中")
-        del_vocab_btn.clicked.connect(self._delete_vocabulary)
-        vlayout.addWidget(del_vocab_btn)
-
-        scroll_layout.addWidget(vocab_card)
-
-        # 卡片 6: 开机启动
+        # 开机启动
         autostart_card = QGroupBox("开机启动")
         alayout_auto = QVBoxLayout(autostart_card)
         self._autostart_check = QCheckBox("开机自动启动 VoiceType")
         alayout_auto.addWidget(self._autostart_check)
-        scroll_layout.addWidget(autostart_card)
+        layout.addWidget(autostart_card)
 
-        scroll_layout.addStretch()
+        layout.addStretch()
 
-        # 将滚动区域添加到主布局
-        scroll.setWidget(scroll_content)
-        root.addWidget(scroll)
-
-        # 底部按钮行
+        # 底部按钮
         btn_row = QHBoxLayout()
         btn_row.addStretch()
 
@@ -354,22 +746,25 @@ class SettingsWindow(QWidget):
         self._apply_btn.setMinimumWidth(100)
         self._apply_btn.clicked.connect(self._on_apply)
         btn_row.addWidget(self._apply_btn)
+        layout.addLayout(btn_row)
 
-        root.addLayout(btn_row)
-
-        # 底部状态
         self._status_label = QLabel("")
         self._status_label.setObjectName("status")
-        root.addWidget(self._status_label)
+        layout.addWidget(self._status_label)
+
+        scroll.setWidget(content)
+        outer.addWidget(scroll)
+        return page
+
+    # ---------- 托盘 ----------
 
     def _init_tray(self):
-        """系统托盘"""
         self._tray = QSystemTrayIcon(self)
         self._tray.setIcon(_make_tray_icon())
         self._tray.setToolTip("VoiceType — 语音输入")
 
         menu = QMenu()
-        show_action = QAction("显示设置", self)
+        show_action = QAction("显示主窗口", self)
         show_action.triggered.connect(self._show_window)
         menu.addAction(show_action)
         menu.addSeparator()
@@ -398,8 +793,10 @@ class SettingsWindow(QWidget):
             )
             engine.initialize()
         else:
-            size = self._config.get("local_model", "base")
-            engine = LocalEngine(model_size=size)
+            engine = AlibabaEngine(
+                api_key=self._config.get("alibaba_api_key", ""),
+                phrase_id=self._config.get("phrase_id", ""),
+            )
             engine.initialize()
         self._engine = engine
         self.engine_changed.emit(self._engine)
@@ -407,125 +804,51 @@ class SettingsWindow(QWidget):
     # ---------- 配置应用 ----------
 
     def _apply_config(self):
-        # 引擎选择
         engine = self._config.get("engine", "alibaba")
         idx = self._engine_combo.findData(engine)
         if idx >= 0:
             self._engine_combo.setCurrentIndex(idx)
 
-        # 阿里云 API Key
-        api_key = self._config.get("alibaba_api_key", "")
-        self._api_input.setText(api_key)
-
-        # 火山引擎 ASR 凭证
+        self._api_input.setText(self._config.get("alibaba_api_key", ""))
         self._volc_app_id_input.setText(self._config.get("volc_asr_app_id", ""))
         self._volc_access_token_input.setText(self._config.get("volc_asr_access_token", ""))
 
-        # 本地模型
-        local = self._config.get("local_model", "base")
-        sizes = ["tiny", "base", "small"]
-        idx2 = sizes.index(local) if local in sizes else 1
-        self._model_combo.setCurrentIndex(idx2)
+        self._on_engine_preview()
 
-        # 引擎初始状态
-        if engine == "alibaba":
-            self._local_widget.hide()
-            self._progress_bar.hide()
-            self._alibaba_api_widget.show()
-            self._volc_api_widget.hide()
-        elif engine == "volcengine":
-            self._local_widget.hide()
-            self._progress_bar.hide()
-            self._alibaba_api_widget.hide()
-            self._volc_api_widget.show()
-        else:
-            self._local_widget.show()
-            self._progress_bar.hide()
-            self._alibaba_api_widget.hide()
-            self._volc_api_widget.hide()
-            # 检查模型是否已下载
-            self._check_model_status()
-
-        # 自定义词库
-        vocab = self._config.get("custom_vocabulary", [])
-        self._vocab_list.clear()
-
-        # 兼容旧版纯列表格式
-        if isinstance(vocab, dict):
-            vocab = list(vocab.values())
-            self._config["custom_vocabulary"] = vocab
-
-        for item_data in vocab:
-            if isinstance(item_data, dict):
-                term = item_data.get("term", "")
-            else:
-                term = str(item_data)
-
-            list_item = QListWidgetItem(term)
-            list_item.setData(Qt.UserRole, {"term": term})
-            self._vocab_list.addItem(list_item)
-
-        # 开机自动启动
         self._autostart_check.setChecked(self._config.get("autostart", False))
 
-        # 润色强度
         strength = self._config.get("polish_strength", "medium")
         btn = {"light": self._polish_light, "medium": self._polish_medium, "strong": self._polish_strong}.get(strength)
         if btn:
             btn.setChecked(True)
 
-        # 豆包润色凭证
         self._doubao_api_key_input.setText(self._config.get("doubao_api_key", ""))
         self._doubao_endpoint_input.setText(self._config.get("doubao_endpoint_id", ""))
 
+        self._refresh_dict_list()
+
     # ---------- 事件处理 ----------
 
-    def _on_engine_preview(self, index):
-        """引擎切换预览（不保存）"""
+    def _on_engine_preview(self, index=None):
         engine_type = self._engine_combo.currentData()
-
-        if engine_type == "local":
-            self._local_widget.show()
-            self._progress_bar.hide()
-            self._alibaba_api_widget.hide()
-            self._volc_api_widget.hide()
-            self._check_model_status()
-        elif engine_type == "volcengine":
-            self._local_widget.hide()
-            self._progress_bar.hide()
+        if engine_type == "volcengine":
             self._alibaba_api_widget.hide()
             self._volc_api_widget.show()
-        else:  # alibaba
-            self._local_widget.hide()
-            self._progress_bar.hide()
+        else:
             self._alibaba_api_widget.show()
             self._volc_api_widget.hide()
 
     def _on_apply(self):
-        """确定按钮：保存配置并应用"""
-        # 保存引擎类型
         engine_type = self._engine_combo.currentData()
         self._config["engine"] = engine_type
-
-        # 保存阿里云 API Key
-        api_key = self._api_input.text()
-        self._config["alibaba_api_key"] = api_key
-
-        # 保存火山引擎 ASR 凭证
+        self._config["alibaba_api_key"] = self._api_input.text()
         self._config["volc_asr_app_id"] = self._volc_app_id_input.text()
         self._config["volc_asr_access_token"] = self._volc_access_token_input.text()
 
-        # 保存本地模型
-        size_index = self._model_combo.currentIndex()
-        sizes = ["tiny", "base", "small"]
-        self._config["local_model"] = sizes[size_index]
-
-        # 保存开机自动启动
         autostart = self._autostart_check.isChecked()
         self._config["autostart"] = autostart
         self._set_autostart(autostart)
 
-        # 保存润色强度
         if self._polish_light.isChecked():
             self._config["polish_strength"] = "light"
         elif self._polish_strong.isChecked():
@@ -533,27 +856,24 @@ class SettingsWindow(QWidget):
         else:
             self._config["polish_strength"] = "medium"
 
-        # 保存豆包润色凭证
         self._config["doubao_api_key"] = self._doubao_api_key_input.text()
         self._config["doubao_endpoint_id"] = self._doubao_endpoint_input.text()
 
-        # 保存自定义词库
+        # 自定义词库（从词典页同步）
         vocab = []
-        hotwords = []  # 仅术语列表，用于 Paraformer 热词 API
-        for i in range(self._vocab_list.count()):
-            item = self._vocab_list.item(i)
-            data = item.data(Qt.UserRole)
-            term = data.get("term") if data else item.text()
+        hotwords = []
+        for i in range(self._dict_list.count()):
+            data = self._dict_list.item(i).data(Qt.UserRole)
+            term = data.get("term") if data else self._dict_list.item(i).text()
             vocab.append({"term": term})
             hotwords.append(term)
         self._config["custom_vocabulary"] = vocab
 
-        # 同步热词表到阿里云，获取 phrase_id
-        if engine_type == "alibaba" and hotwords and api_key:
+        if engine_type == "alibaba" and hotwords and self._config.get("alibaba_api_key"):
             self._status_label.setText("正在同步热词表...")
             QApplication.processEvents()
             phrase_id = sync_vocabulary(
-                api_key=api_key,
+                api_key=self._config.get("alibaba_api_key"),
                 hotwords=hotwords,
                 phrase_id=self._config.get("phrase_id", ""),
             )
@@ -563,28 +883,22 @@ class SettingsWindow(QWidget):
                 self._status_label.setText("热词同步失败（识别仍可用，热词不生效）")
                 QTimer.singleShot(3000, lambda: self._update_status())
         elif not vocab:
-            # 热词列表为空，清空 phrase_id
             self._config["phrase_id"] = ""
 
-        # 保存配置文件
         save_config(self._config)
-
-        # 重新创建引擎
         self._create_engine()
         self._update_status()
+        self._refresh_dict_list()
 
-        # 提示用户
         self._status_label.setText("设置已保存并应用")
         QTimer.singleShot(2000, lambda: self._update_status())
 
     def _on_cancel(self):
-        """取消按钮：恢复到已保存的配置"""
         self._apply_config()
         self._status_label.setText("已恢复到上次保存的设置")
         QTimer.singleShot(2000, lambda: self._update_status())
 
     def _toggle_api_visibility(self):
-        """切换 API Key 显示/隐藏"""
         if self._api_input.echoMode() == QLineEdit.Password:
             self._api_input.setEchoMode(QLineEdit.Normal)
             self._eye_btn.setIcon(_make_eye_icon(visible=False))
@@ -592,141 +906,24 @@ class SettingsWindow(QWidget):
             self._api_input.setEchoMode(QLineEdit.Password)
             self._eye_btn.setIcon(_make_eye_icon(visible=True))
 
-    def _add_vocabulary(self):
-        """添加词汇"""
-        term = self._vocab_term_input.text().strip()
-
-        if not term:
-            self._status_label.setText("请输入词汇")
-            QTimer.singleShot(2000, lambda: self._update_status())
-            return
-
-        # 检查是否已存在
-        for i in range(self._vocab_list.count()):
-            item = self._vocab_list.item(i)
-            data = item.data(Qt.UserRole)
-            if data and data.get("term") == term:
-                self._status_label.setText(f"词汇 '{term}' 已存在")
-                QTimer.singleShot(2000, lambda: self._update_status())
-                return
-
-        item = QListWidgetItem(term)
-        item.setData(Qt.UserRole, {"term": term})
-        self._vocab_list.addItem(item)
-
-        self._vocab_term_input.clear()
-        hint = f"已添加 '{term}'（点击确定保存）"
-        self._status_label.setText(hint)
-        QTimer.singleShot(2000, lambda: self._update_status())
-
-    def _delete_vocabulary(self):
-        """删除选中的词汇"""
-        current_item = self._vocab_list.currentItem()
-        if current_item:
-            data = current_item.data(Qt.UserRole)
-            display = current_item.text()
-            self._vocab_list.takeItem(self._vocab_list.row(current_item))
-            self._status_label.setText(f"已删除 '{display}'（点击确定保存）")
-            QTimer.singleShot(2000, lambda: self._update_status())
-
-    def _on_engine_switch(self, index):
-        """引擎切换（旧方法，保留用于兼容）"""
-        self._on_engine_preview(index)
-
-    def _check_model_status(self):
-        """检查本地模型是否已下载"""
-        from engine.local_engine import LocalEngine, WHISPER_MODELS, MODEL_DIR
-        import os
-
-        model_size = self._model_combo.currentData()
-        model_name = WHISPER_MODELS.get(model_size, "base")
-        model_path = os.path.join(MODEL_DIR, f"models--Systran--faster-whisper-{model_name}")
-
-        if os.path.exists(model_path):
-            self._download_btn.setText("重新下载")
-            self._status_label.setText("模型已就绪，可以开始使用")
-        else:
-            self._download_btn.setText("下载模型")
-            self._status_label.setText("请先下载模型")
-
     def _on_api_key_changed(self, text):
-        """API Key 输入提示（不保存）"""
         if text and len(text) > 10:
             self._api_status.setText("API Key 已填写")
-        elif text:
-            self._api_status.setText("")
         else:
             self._api_status.setText("")
-
-    def _download_model(self):
-        size_index = self._model_combo.currentIndex()
-        sizes = ["tiny", "base", "small"]
-        model_size = sizes[size_index]
-
-        # 下载时保存模型选择
-        self._config["local_model"] = model_size
-        save_config(self._config)
-
-        self._downloading = True
-        self._download_btn.setEnabled(False)
-        self._download_btn.setText("下载中...")
-        self._progress_bar.setValue(0)
-        self._progress_bar.show()
-
-        self._download_thread = threading.Thread(
-            target=self._do_download, args=(model_size,), daemon=True
-        )
-        self._download_thread.start()
-
-    def _do_download(self, model_size):
-        def progress(val, msg):
-            # 从后台线程安全地更新 UI
-            self.download_progress.emit(val, msg)
-
-        ok = download_model(model_size, progress_callback=progress)
-
-        # 下载完成后更新 UI（必须通过信号）
-        if ok:
-            self.download_progress.emit(100, "完成")
-        else:
-            self.download_progress.emit(0, "失败")
-
-    def _update_download_progress(self, val, msg):
-        """在主线程更新下载进度（由信号触发）"""
-        self._progress_bar.setValue(val)
-        self._status_label.setText(f"下载模型: {msg}")
-
-        # 下载完成时的处理
-        if val == 100:
-            self._progress_bar.hide()
-            self._download_btn.setEnabled(True)
-            self._download_btn.setText("重新下载")
-            self._downloading = False
-            self._status_label.setText("模型已就绪，可以开始使用")
-            self._create_engine()
-        elif val == 0 and msg == "失败":
-            self._progress_bar.hide()
-            self._download_btn.setEnabled(True)
-            self._download_btn.setText("下载模型")
-            self._downloading = False
-            self._status_label.setText("下载失败，请检查网络")
 
     def _record_hotkey(self):
         self._hotkey_btn.setText("按下快捷键组合...")
         self._hotkey_btn.setStyleSheet("border-color: #22c55e; color: #22c55e;")
-
-        # 停止当前监听
         self._hotkey.stop()
 
         def on_done(keys):
             if len(keys) >= 1:
-                # 保存快捷键（快捷键需要立即生效）
                 self._config["hotkey"] = keys
                 save_config(self._config)
                 self._hotkey.set_hotkey(keys)
             self._hotkey_btn.setText(self._hotkey_display())
             self._hotkey_btn.setStyleSheet("")
-            # 重启监听
             self._hotkey.start()
 
         from voice_typing.core.hotkey import HotkeyManager
@@ -738,12 +935,10 @@ class SettingsWindow(QWidget):
         self._hotkey_btn.setText("点击设置快捷键")
         self._hotkey.set_hotkey([])
 
-    # pynput KeyCode vk → 显示名称映射（补充无法从系统获取的键名）
     _VK_LABELS = {269025067: "Fn"}
 
     @classmethod
     def _key_label(cls, s):
-        """将配置中的键字符串转为显示名称"""
         if s.startswith("vk:"):
             vk = int(s[3:])
             if vk in cls._VK_LABELS:
@@ -763,7 +958,7 @@ class SettingsWindow(QWidget):
         else:
             self._status_label.setText("引擎未就绪，请配置 API Key 或下载本地模型")
 
-    # ---------- 托盘 ----------
+    # ---------- 托盘事件 ----------
 
     def _on_tray_activated(self, reason):
         if reason == QSystemTrayIcon.DoubleClick:
@@ -778,7 +973,6 @@ class SettingsWindow(QWidget):
     AUTOSTART_FILE = os.path.join(AUTOSTART_DIR, "voice-typing.desktop")
 
     def _set_autostart(self, enable: bool):
-        """创建或移除开机自启动 desktop 文件"""
         if enable:
             os.makedirs(self.AUTOSTART_DIR, exist_ok=True)
             with open(self.AUTOSTART_FILE, "w") as f:

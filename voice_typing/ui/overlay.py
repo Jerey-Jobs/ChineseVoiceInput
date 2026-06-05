@@ -97,7 +97,6 @@ class OverlayWindow(QWidget):
         # 拖拽相关
         self._dragging = False
         self._drag_position = None
-        self._user_moved = False  # 标记用户是否手动移动过窗口
 
         # 组件
         self._indicator = StatusIndicator()
@@ -107,7 +106,7 @@ class OverlayWindow(QWidget):
 
         self._text_label = QLabel("")
         self._text_label.setStyleSheet(
-            "color: #f0f0f0; font-size: 15px; background: transparent; padding: 0px;"
+            "color: #f0f0f0; font-size: 10pt; background: transparent; padding: 0px;"
         )
         self._text_label.setWordWrap(False)
         self._text_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
@@ -270,5 +269,4 @@ class OverlayWindow(QWidget):
         """鼠标释放：结束拖拽"""
         if event.button() == Qt.LeftButton:
             self._dragging = False
-            self._user_moved = True  # 标记用户已手动移动窗口
             event.accept()
