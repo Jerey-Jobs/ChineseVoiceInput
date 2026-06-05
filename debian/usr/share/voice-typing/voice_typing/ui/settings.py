@@ -177,6 +177,7 @@ class SettingsWindow(QWidget):
         self._hotkey = hotkey_manager
         self._engine = None
         self._nav_btns = []
+        self._new_hotkey_keys = None
 
         self._init_ui()
         self._init_tray()
@@ -212,17 +213,15 @@ class SettingsWindow(QWidget):
 
         ver_text = f"v{__version__}-dev" if __dev__ else f"v{__version__}"
         ver_label = QLabel(ver_text)
-        ver_label.setStyleSheet("font-size: 10pt; color: #666; padding: 0 8px 12px 8px;")
+        ver_label.setStyleSheet("font-size: 11pt; color: #666; padding: 0 8px 8px 8px;")
         sidebar_layout.addWidget(ver_label)
-
-        sidebar_layout.addSpacing(8)
 
         # 导航按钮
         nav_items = [
-            ("⌂  主界面", 0),
-            ("⧖  历史记录", 1),
-            ("☆  词典", 2),
-            ("⚙  设置", 3),
+            ("主界面", 0),
+            ("历史记录", 1),
+            ("词典", 2),
+            ("设置", 3),
         ]
         for label, idx in nav_items:
             btn = QPushButton(label)
@@ -243,7 +242,7 @@ class SettingsWindow(QWidget):
         )
         status_row.addWidget(self._sidebar_indicator)
         self._sidebar_engine_label = QLabel("引擎未就绪")
-        self._sidebar_engine_label.setStyleSheet("font-size: 10pt; color: #888;")
+        self._sidebar_engine_label.setStyleSheet("font-size: 11pt; color: #aaa;")
         status_row.addWidget(self._sidebar_engine_label)
         status_row.addStretch()
         sidebar_layout.addLayout(status_row)
@@ -298,15 +297,15 @@ class SettingsWindow(QWidget):
         cards_layout.setSpacing(16)
 
         stats_defs = [
-            ("total_seconds", "使用时长", "分钟"),
-            ("total_characters", "输入字数", "字"),
-            ("total_sessions", "录音次数", "次"),
-            ("efficiency", "输入效率", "字/分钟"),
+            ("total_seconds", "使用时长", "分钟", "#22c55e"),
+            ("total_characters", "输入字数", "字", "#3b82f6"),
+            ("total_sessions", "录音次数", "次", "#f59e0b"),
+            ("efficiency", "输入效率", "字/分钟", "#a78bfa"),
         ]
 
         self._stat_labels = {}
-        for key, label_text, unit in stats_defs:
-            card = self._make_stat_card(key, label_text, unit)
+        for key, label_text, unit, color in stats_defs:
+            card = self._make_stat_card(key, label_text, unit, color)
             cards_layout.addWidget(card, 1)
 
         layout.addWidget(cards_widget)
@@ -319,7 +318,7 @@ class SettingsWindow(QWidget):
         elayout.setSpacing(8)
 
         self._home_engine_name = QLabel("")
-        self._home_engine_name.setStyleSheet("font-size: 10pt; font-weight: bold;")
+        self._home_engine_name.setStyleSheet("font-size: 11pt; font-weight: bold;")
         elayout.addWidget(self._home_engine_name)
 
         self._home_engine_status = QLabel("")
@@ -331,7 +330,7 @@ class SettingsWindow(QWidget):
 
         return page
 
-    def _make_stat_card(self, key, label_text, unit):
+    def _make_stat_card(self, key, label_text, unit, color):
         card = QGroupBox("")
         card.setStyleSheet("QGroupBox { border: none; border-radius: 16px; background: #141414; padding: 20px; }")
         layout = QVBoxLayout(card)
@@ -342,11 +341,11 @@ class SettingsWindow(QWidget):
         layout.addWidget(label)
 
         value_label = QLabel("--")
-        value_label.setObjectName("stat-value")
+        value_label.setStyleSheet(f"font-size: 21pt; font-weight: bold; color: {color};")
         layout.addWidget(value_label)
 
         unit_label = QLabel(unit)
-        unit_label.setStyleSheet("font-size: 10pt; color: #666;")
+        unit_label.setStyleSheet("font-size: 11pt; color: #666;")
         layout.addWidget(unit_label)
 
         self._stat_labels[key] = value_label
@@ -360,7 +359,10 @@ class SettingsWindow(QWidget):
         total_sessions = stats.get("total_sessions", 0)
         total_min = total_sec / 60.0
 
-        self._stat_labels["total_seconds"].setText(f"{total_min:.1f}")
+        if total_min < 0.1 and total_sec > 0:
+            self._stat_labels["total_seconds"].setText("< 0.1")
+        else:
+            self._stat_labels["total_seconds"].setText(f"{total_min:.1f}")
         self._stat_labels["total_characters"].setText(str(total_chars))
         self._stat_labels["total_sessions"].setText(str(total_sessions))
 
@@ -399,6 +401,10 @@ class SettingsWindow(QWidget):
         title_row.addWidget(title)
         title_row.addStretch()
 
+        copy_btn = QPushButton("复制选中")
+        copy_btn.clicked.connect(self._copy_history_item)
+        title_row.addWidget(copy_btn)
+
         clear_btn = QPushButton("清空")
         clear_btn.clicked.connect(self._clear_history)
         title_row.addWidget(clear_btn)
@@ -422,14 +428,6 @@ class SettingsWindow(QWidget):
         self._history_list.setVerticalScrollMode(QListWidget.ScrollPerPixel)
         layout.addWidget(self._history_list)
 
-        copy_btn = QPushButton("复制选中")
-        copy_btn.clicked.connect(self._copy_history_item)
-        copy_btn.setFixedWidth(120)
-        copy_row = QHBoxLayout()
-        copy_row.addWidget(copy_btn)
-        copy_row.addStretch()
-        layout.addLayout(copy_row)
-
         return page
 
     def _refresh_history(self):
@@ -439,7 +437,15 @@ class SettingsWindow(QWidget):
             ts = entry.get("timestamp", "")
             engine = entry.get("engine", "")
             chars = entry.get("chars", 0)
-            display = f"{text}\n"
+            meta_parts = []
+            if ts:
+                meta_parts.append(ts)
+            if engine:
+                meta_parts.append(engine)
+            if chars:
+                meta_parts.append(f"{chars}字")
+            meta = "  ·  ".join(meta_parts)
+            display = f"{text}\n{meta}" if meta else text
             item = QListWidgetItem(display)
             item.setData(Qt.UserRole, text)
             self._history_list.addItem(item)
@@ -463,9 +469,16 @@ class SettingsWindow(QWidget):
         layout.setContentsMargins(40, 36, 40, 36)
         layout.setSpacing(16)
 
+        title_row = QHBoxLayout()
         title = QLabel("自定义词典")
         title.setStyleSheet("font-size: 16pt; font-weight: bold; color: #f0f0f0;")
-        layout.addWidget(title)
+        title_row.addWidget(title)
+        title_row.addStretch()
+
+        del_btn = QPushButton("删除选中")
+        del_btn.clicked.connect(self._delete_dict_item)
+        title_row.addWidget(del_btn)
+        layout.addLayout(title_row)
 
         hint = QLabel("添加专业词汇，提升 ASR 识别准确率")
         hint.setObjectName("subtitle")
@@ -496,18 +509,11 @@ class SettingsWindow(QWidget):
         add_btn.clicked.connect(self._add_dict_item)
         add_btn.setFixedWidth(80)
         term_row.addWidget(add_btn)
-        layout.addLayout(term_row)
-
-        del_row = QHBoxLayout()
-        del_btn = QPushButton("删除选中")
-        del_btn.clicked.connect(self._delete_dict_item)
-        del_row.addWidget(del_btn)
-        del_row.addStretch()
 
         self._dict_status = QLabel("")
         self._dict_status.setObjectName("status")
-        del_row.addWidget(self._dict_status)
-        layout.addLayout(del_row)
+        term_row.addWidget(self._dict_status)
+        layout.addLayout(term_row)
 
         layout.addStretch()
         return page
@@ -612,39 +618,17 @@ class SettingsWindow(QWidget):
         self._api_card = QGroupBox("API 配置")
         alayout = QVBoxLayout(self._api_card)
 
+        self._api_status = QLabel("")
+        self._api_status.setObjectName("status")
+
         # 阿里云
         self._alibaba_api_widget = QWidget()
-        api_wrapper = QWidget(self._alibaba_api_widget)
-        api_wrapper.setFixedHeight(40)
-
-        self._api_input = QLineEdit(api_wrapper)
-        self._api_input.setPlaceholderText("输入阿里云 DashScope API Key")
-        self._api_input.setEchoMode(QLineEdit.Password)
-        self._api_input.setGeometry(0, 0, 400, 40)
-        self._api_input.setStyleSheet("padding-right: 40px;")
-
-        self._eye_btn = QPushButton(api_wrapper)
-        self._eye_btn.setIcon(_make_eye_icon(visible=True))
-        self._eye_btn.setFixedSize(35, 35)
-        self._eye_btn.setStyleSheet("""
-            QPushButton { border: none; background: transparent; }
-            QPushButton:hover { background: rgba(255, 255, 255, 0.1); border-radius: 4px; }
-        """)
-        self._eye_btn.setCursor(Qt.PointingHandCursor)
-        self._eye_btn.setToolTip("显示/隐藏 API Key")
-        self._eye_btn.clicked.connect(self._toggle_api_visibility)
-        self._api_input.textChanged.connect(self._on_api_key_changed)
-
-        def resize_api_widgets():
-            w = api_wrapper.width()
-            self._api_input.setGeometry(0, 0, w, 40)
-            self._eye_btn.setGeometry(w - 38, 3, 35, 35)
-        api_wrapper.resizeEvent = lambda e: resize_api_widgets()
-        resize_api_widgets()
-
         alibaba_api_layout = QVBoxLayout(self._alibaba_api_widget)
         alibaba_api_layout.setContentsMargins(0, 0, 0, 0)
-        alibaba_api_layout.addWidget(api_wrapper)
+        self._api_wrapper, self._api_input = self._make_password_input(
+            "输入阿里云 DashScope API Key", self._api_status
+        )
+        alibaba_api_layout.addWidget(self._api_wrapper)
         alayout.addWidget(self._alibaba_api_widget)
 
         # 火山引擎
@@ -657,24 +641,18 @@ class SettingsWindow(QWidget):
         volc_asr_label.setObjectName("subtitle")
         volc_layout.addWidget(volc_asr_label)
 
-        self._volc_app_id_input = QLineEdit()
-        self._volc_app_id_input.setPlaceholderText("App ID（X-Api-App-Key）")
-        self._volc_app_id_input.setEchoMode(QLineEdit.Password)
-        volc_layout.addWidget(self._volc_app_id_input)
+        app_id_wrapper, self._volc_app_id_input = self._make_password_input("App ID（X-Api-App-Key）")
+        volc_layout.addWidget(app_id_wrapper)
 
-        self._volc_access_token_input = QLineEdit()
-        self._volc_access_token_input.setPlaceholderText("Access Token（X-Api-Access-Key）")
-        self._volc_access_token_input.setEchoMode(QLineEdit.Password)
-        volc_layout.addWidget(self._volc_access_token_input)
+        access_token_wrapper, self._volc_access_token_input = self._make_password_input("Access Token（X-Api-Access-Key）")
+        volc_layout.addWidget(access_token_wrapper)
 
         volc_llm_label = QLabel("文本润色 (豆包大模型)")
         volc_llm_label.setObjectName("subtitle")
         volc_layout.addWidget(volc_llm_label)
 
-        self._doubao_api_key_input = QLineEdit()
-        self._doubao_api_key_input.setPlaceholderText("豆包 ARK API Key")
-        self._doubao_api_key_input.setEchoMode(QLineEdit.Password)
-        volc_layout.addWidget(self._doubao_api_key_input)
+        doubao_wrapper, self._doubao_api_key_input = self._make_password_input("豆包 ARK API Key")
+        volc_layout.addWidget(doubao_wrapper)
 
         self._doubao_endpoint_input = QLineEdit()
         self._doubao_endpoint_input.setPlaceholderText("推理接入点 ID（ep-xxxxxxxxxxxx）")
@@ -683,8 +661,6 @@ class SettingsWindow(QWidget):
         alayout.addWidget(self._volc_api_widget)
         self._volc_api_widget.hide()
 
-        self._api_status = QLabel("")
-        self._api_status.setObjectName("status")
         alayout.addWidget(self._api_status)
 
         layout.addWidget(self._api_card)
@@ -698,6 +674,7 @@ class SettingsWindow(QWidget):
         self._hotkey_btn.clicked.connect(self._record_hotkey)
         hrow.addWidget(self._hotkey_btn)
         self._clear_hotkey_btn = QPushButton("清除")
+        self._clear_hotkey_btn.setFixedWidth(80)
         self._clear_hotkey_btn.clicked.connect(self._clear_hotkey)
         hrow.addWidget(self._clear_hotkey_btn)
         hlayout.addLayout(hrow)
@@ -748,12 +725,13 @@ class SettingsWindow(QWidget):
         btn_row.addWidget(self._apply_btn)
         layout.addLayout(btn_row)
 
-        self._status_label = QLabel("")
-        self._status_label.setObjectName("status")
-        layout.addWidget(self._status_label)
-
         scroll.setWidget(content)
         outer.addWidget(scroll)
+
+        self._status_label = QLabel("")
+        self._status_label.setObjectName("status")
+        self._status_label.setContentsMargins(40, 8, 40, 8)
+        outer.addWidget(self._status_label)
         return page
 
     # ---------- 托盘 ----------
@@ -777,6 +755,47 @@ class SettingsWindow(QWidget):
         self._tray.show()
 
     # ---------- 引擎 ----------
+
+    def _make_password_input(self, placeholder, status_label=None):
+        """创建带眼睛显示/隐藏切换的密码输入框"""
+        wrapper = QWidget()
+        layout = QHBoxLayout(wrapper)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+
+        input_field = QLineEdit()
+        input_field.setPlaceholderText(placeholder)
+        input_field.setEchoMode(QLineEdit.Password)
+        layout.addWidget(input_field)
+
+        eye_btn = QPushButton()
+        eye_btn.setIcon(_make_eye_icon(visible=True))
+        eye_btn.setFixedSize(35, 35)
+        eye_btn.setStyleSheet("""
+            QPushButton { border: none; background: transparent; }
+            QPushButton:hover { background: rgba(255, 255, 255, 0.1); border-radius: 4px; }
+        """)
+        eye_btn.setCursor(Qt.PointingHandCursor)
+        eye_btn.setToolTip("显示/隐藏")
+
+        def toggle():
+            if input_field.echoMode() == QLineEdit.Password:
+                input_field.setEchoMode(QLineEdit.Normal)
+                eye_btn.setIcon(_make_eye_icon(visible=False))
+            else:
+                input_field.setEchoMode(QLineEdit.Password)
+                eye_btn.setIcon(_make_eye_icon(visible=True))
+        eye_btn.clicked.connect(toggle)
+
+        if status_label is not None:
+            def on_text_changed(text):
+                if text and len(text) > 10:
+                    status_label.setText("API Key 已填写")
+                else:
+                    status_label.setText("")
+            input_field.textChanged.connect(on_text_changed)
+
+        return wrapper, input_field
 
     def _create_engine(self):
         engine_type = self._config.get("engine", "alibaba")
@@ -859,6 +878,10 @@ class SettingsWindow(QWidget):
         self._config["doubao_api_key"] = self._doubao_api_key_input.text()
         self._config["doubao_endpoint_id"] = self._doubao_endpoint_input.text()
 
+        if self._new_hotkey_keys is not None:
+            self._config["hotkey"] = self._new_hotkey_keys
+            self._new_hotkey_keys = None
+
         # 自定义词库（从词典页同步）
         vocab = []
         hotwords = []
@@ -894,23 +917,11 @@ class SettingsWindow(QWidget):
         QTimer.singleShot(2000, lambda: self._update_status())
 
     def _on_cancel(self):
+        self._new_hotkey_keys = None
+        self._hotkey.set_hotkey(self._config.get("hotkey", []))
         self._apply_config()
         self._status_label.setText("已恢复到上次保存的设置")
         QTimer.singleShot(2000, lambda: self._update_status())
-
-    def _toggle_api_visibility(self):
-        if self._api_input.echoMode() == QLineEdit.Password:
-            self._api_input.setEchoMode(QLineEdit.Normal)
-            self._eye_btn.setIcon(_make_eye_icon(visible=False))
-        else:
-            self._api_input.setEchoMode(QLineEdit.Password)
-            self._eye_btn.setIcon(_make_eye_icon(visible=True))
-
-    def _on_api_key_changed(self, text):
-        if text and len(text) > 10:
-            self._api_status.setText("API Key 已填写")
-        else:
-            self._api_status.setText("")
 
     def _record_hotkey(self):
         self._hotkey_btn.setText("按下快捷键组合...")
@@ -919,8 +930,7 @@ class SettingsWindow(QWidget):
 
         def on_done(keys):
             if len(keys) >= 1:
-                self._config["hotkey"] = keys
-                save_config(self._config)
+                self._new_hotkey_keys = keys
                 self._hotkey.set_hotkey(keys)
             self._hotkey_btn.setText(self._hotkey_display())
             self._hotkey_btn.setStyleSheet("")
@@ -930,8 +940,7 @@ class SettingsWindow(QWidget):
         self._record_listener = HotkeyManager.record_key_sequence(on_done)
 
     def _clear_hotkey(self):
-        self._config["hotkey"] = []
-        save_config(self._config)
+        self._new_hotkey_keys = []
         self._hotkey_btn.setText("点击设置快捷键")
         self._hotkey.set_hotkey([])
 
@@ -947,7 +956,10 @@ class SettingsWindow(QWidget):
         return s.upper()
 
     def _hotkey_display(self):
-        keys = self._config.get("hotkey", [])
+        if self._new_hotkey_keys is not None:
+            keys = self._new_hotkey_keys
+        else:
+            keys = self._config.get("hotkey", [])
         if not keys:
             return "点击设置快捷键"
         return " + ".join(self._key_label(k) for k in keys)

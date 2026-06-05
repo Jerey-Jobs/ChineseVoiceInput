@@ -5,7 +5,7 @@ DARK_STYLE = """
 QWidget {
     background-color: #0d0d0d;
     color: #f0f0f0;
-    font-size: 10pt;
+    font-size: 11pt;
 }
 
 /* 输入框 */
@@ -86,7 +86,7 @@ QComboBox {
 }
 QComboBox:hover { border-color: #22c55e; }
 QComboBox::drop-down { border: none; width: 30px; }
-QComboBox::down-arrow { image: none; border: none; }
+QComboBox::down-arrow { border: none; }
 QComboBox QAbstractItemView {
     background: #1a1a1a;
     border: 1px solid #333;
@@ -113,7 +113,7 @@ QProgressBar {
     text-align: center;
     color: #f0f0f0;
     height: 8px;
-    font-size: 10pt;
+    font-size: 11pt;
 }
 QProgressBar::chunk {
     background: #22c55e;
@@ -128,13 +128,13 @@ QGroupBox {
     margin-top: 26px;
     padding: 24px 20px 20px 20px;
     font-weight: bold;
-    font-size: 10pt;
+    font-size: 11pt;
 }
 QGroupBox::title {
     subcontrol-origin: margin;
     left: 20px;
     padding: 0 8px;
-    color: #888;
+    color: #aaa;
 }
 
 /* 复选框 */
@@ -174,16 +174,16 @@ QLabel {
     color: #f0f0f0;
 }
 QLabel#subtitle {
-    color: #888;
-    font-size: 10pt;
+    color: #aaa;
+    font-size: 11pt;
 }
 QLabel#status {
     color: #22c55e;
-    font-size: 10pt;
+    font-size: 11pt;
 }
 QLabel#error {
     color: #ef4444;
-    font-size: 10pt;
+    font-size: 11pt;
 }
 
 /* 统计卡片数值 */
@@ -193,8 +193,8 @@ QLabel#stat-value {
     color: #f0f0f0;
 }
 QLabel#stat-label {
-    font-size: 10pt;
-    color: #888;
+    font-size: 11pt;
+    color: #aaa;
 }
 
 /* 分割线 */
@@ -234,7 +234,7 @@ QToolTip {
     border-radius: 10px;
     padding: 6px 10px;
     color: #f0f0f0;
-    font-size: 10pt;
+    font-size: 11pt;
 }
 """
 
@@ -247,7 +247,7 @@ QWidget#overlay {
 QLabel#transcript {
     background: transparent;
     color: #f0f0f0;
-    font-size: 10pt;
+    font-size: 11pt;
     padding: 16px 24px;
 }
 QLabel#indicator {
