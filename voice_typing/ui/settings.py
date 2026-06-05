@@ -213,7 +213,7 @@ class SettingsWindow(QWidget):
 
         ver_text = f"v{__version__}-dev" if __dev__ else f"v{__version__}"
         ver_label = QLabel(ver_text)
-        ver_label.setStyleSheet("font-size: 11pt; color: #666; padding: 0 8px 8px 8px;")
+        ver_label.setStyleSheet("font-size: 10pt; color: #666; padding: 0 8px 8px 8px;")
         sidebar_layout.addWidget(ver_label)
 
         # 导航按钮
@@ -242,7 +242,7 @@ class SettingsWindow(QWidget):
         )
         status_row.addWidget(self._sidebar_indicator)
         self._sidebar_engine_label = QLabel("引擎未就绪")
-        self._sidebar_engine_label.setStyleSheet("font-size: 11pt; color: #aaa;")
+        self._sidebar_engine_label.setStyleSheet("font-size: 10pt; color: #aaa;")
         status_row.addWidget(self._sidebar_engine_label)
         status_row.addStretch()
         sidebar_layout.addLayout(status_row)
@@ -318,7 +318,7 @@ class SettingsWindow(QWidget):
         elayout.setSpacing(8)
 
         self._home_engine_name = QLabel("")
-        self._home_engine_name.setStyleSheet("font-size: 11pt; font-weight: bold;")
+        self._home_engine_name.setStyleSheet("font-size: 10pt; font-weight: bold;")
         elayout.addWidget(self._home_engine_name)
 
         self._home_engine_status = QLabel("")
@@ -345,7 +345,7 @@ class SettingsWindow(QWidget):
         layout.addWidget(value_label)
 
         unit_label = QLabel(unit)
-        unit_label.setStyleSheet("font-size: 11pt; color: #666;")
+        unit_label.setStyleSheet("font-size: 10pt; color: #666;")
         layout.addWidget(unit_label)
 
         self._stat_labels[key] = value_label

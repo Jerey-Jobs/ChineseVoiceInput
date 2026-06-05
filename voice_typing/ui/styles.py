@@ -5,7 +5,7 @@ DARK_STYLE = """
 QWidget {
     background-color: #0d0d0d;
     color: #f0f0f0;
-    font-size: 11pt;
+    font-size: 10pt;
 }
 
 /* 输入框 */
@@ -113,7 +113,7 @@ QProgressBar {
     text-align: center;
     color: #f0f0f0;
     height: 8px;
-    font-size: 11pt;
+    font-size: 10pt;
 }
 QProgressBar::chunk {
     background: #22c55e;
@@ -128,7 +128,7 @@ QGroupBox {
     margin-top: 26px;
     padding: 24px 20px 20px 20px;
     font-weight: bold;
-    font-size: 11pt;
+    font-size: 10pt;
 }
 QGroupBox::title {
     subcontrol-origin: margin;
@@ -175,15 +175,15 @@ QLabel {
 }
 QLabel#subtitle {
     color: #aaa;
-    font-size: 11pt;
+    font-size: 10pt;
 }
 QLabel#status {
     color: #22c55e;
-    font-size: 11pt;
+    font-size: 10pt;
 }
 QLabel#error {
     color: #ef4444;
-    font-size: 11pt;
+    font-size: 10pt;
 }
 
 /* 统计卡片数值 */
@@ -193,7 +193,7 @@ QLabel#stat-value {
     color: #f0f0f0;
 }
 QLabel#stat-label {
-    font-size: 11pt;
+    font-size: 10pt;
     color: #aaa;
 }
 
@@ -234,7 +234,7 @@ QToolTip {
     border-radius: 10px;
     padding: 6px 10px;
     color: #f0f0f0;
-    font-size: 11pt;
+    font-size: 10pt;
 }
 """
 
@@ -247,7 +247,7 @@ QWidget#overlay {
 QLabel#transcript {
     background: transparent;
     color: #f0f0f0;
-    font-size: 11pt;
+    font-size: 10pt;
     padding: 16px 24px;
 }
 QLabel#indicator {
