@@ -82,18 +82,12 @@ class Recorder(QObject):
             except queue.Empty:
                 continue
 
-        print("[DEBUG] 录音结束，调用 engine.stop()...")
         final_text = self._engine.stop()
-        print(f"[DEBUG] engine.stop() 返回文本: '{final_text}'")
 
-        # 使用 QMetaObject.invokeMethod 在主线程中调用
         if self._app_obj:
-            print("[DEBUG] 使用 QMetaObject.invokeMethod 调用 _on_recording_done...")
             QMetaObject.invokeMethod(
                 self._app_obj,
                 "_on_recording_done",
                 Qt.QueuedConnection,
                 Q_ARG(str, final_text)
             )
-        else:
-            print("[DEBUG] 没有设置 app_obj")

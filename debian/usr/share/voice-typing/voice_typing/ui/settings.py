@@ -238,7 +238,7 @@ class SettingsWindow(QWidget):
         self._sidebar_indicator = QLabel()
         self._sidebar_indicator.setFixedSize(8, 8)
         self._sidebar_indicator.setStyleSheet(
-            "background: #22c55e; border-radius: 4px; min-width: 8px; max-width: 8px; min-height: 8px; max-height: 8px;"
+            "background: #666; border-radius: 4px; min-width: 8px; max-width: 8px; min-height: 8px; max-height: 8px;"
         )
         status_row.addWidget(self._sidebar_indicator)
         self._sidebar_engine_label = QLabel("引擎未就绪")
@@ -428,11 +428,24 @@ class SettingsWindow(QWidget):
         self._history_list.setVerticalScrollMode(QListWidget.ScrollPerPixel)
         layout.addWidget(self._history_list)
 
+        self._history_empty_label = QLabel("暂无历史记录")
+        self._history_empty_label.setObjectName("subtitle")
+        self._history_empty_label.setAlignment(Qt.AlignCenter)
+        self._history_empty_label.hide()
+        layout.addWidget(self._history_empty_label)
+
         return page
 
     def _refresh_history(self):
         self._history_list.clear()
-        for entry in self._config.get("history", []):
+        history = self._config.get("history", [])
+        if not history:
+            self._history_list.hide()
+            self._history_empty_label.show()
+            return
+        self._history_list.show()
+        self._history_empty_label.hide()
+        for entry in history:
             text = entry.get("text", "")
             ts = entry.get("timestamp", "")
             engine = entry.get("engine", "")
@@ -460,6 +473,8 @@ class SettingsWindow(QWidget):
         self._config["history"] = []
         save_config(self._config)
         self._history_list.clear()
+        self._history_list.hide()
+        self._history_empty_label.show()
 
     # ---------- Page 2: 词典 ----------
 
@@ -499,6 +514,11 @@ class SettingsWindow(QWidget):
         self._dict_list.setVerticalScrollMode(QListWidget.ScrollPerPixel)
         layout.addWidget(self._dict_list)
 
+        self._dict_empty_label = QLabel("暂无词条，添加专业词汇以提升识别准确率")
+        self._dict_empty_label.setObjectName("subtitle")
+        self._dict_empty_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(self._dict_empty_label)
+
         term_row = QHBoxLayout()
         self._dict_term_input = QLineEdit()
         self._dict_term_input.setPlaceholderText("输入词汇（如：CUDA、rviz）")
@@ -520,7 +540,8 @@ class SettingsWindow(QWidget):
 
     def _refresh_dict_list(self):
         self._dict_list.clear()
-        for item_data in self._config.get("custom_vocabulary", []):
+        vocab = self._config.get("custom_vocabulary", [])
+        for item_data in vocab:
             if isinstance(item_data, dict):
                 term = item_data.get("term", "")
             else:
@@ -528,6 +549,9 @@ class SettingsWindow(QWidget):
             list_item = QListWidgetItem(term)
             list_item.setData(Qt.UserRole, {"term": term})
             self._dict_list.addItem(list_item)
+        has_items = self._dict_list.count() > 0
+        self._dict_list.setVisible(has_items)
+        self._dict_empty_label.setVisible(not has_items)
 
     def _add_dict_item(self):
         term = self._dict_term_input.text().strip()
@@ -546,6 +570,8 @@ class SettingsWindow(QWidget):
         item = QListWidgetItem(term)
         item.setData(Qt.UserRole, {"term": term})
         self._dict_list.addItem(item)
+        self._dict_list.show()
+        self._dict_empty_label.hide()
         self._dict_term_input.clear()
         self._save_dict()
 
@@ -553,6 +579,9 @@ class SettingsWindow(QWidget):
         item = self._dict_list.currentItem()
         if item:
             self._dict_list.takeItem(self._dict_list.row(item))
+            if self._dict_list.count() == 0:
+                self._dict_list.hide()
+                self._dict_empty_label.show()
             self._save_dict()
 
     def _save_dict(self):
@@ -577,7 +606,6 @@ class SettingsWindow(QWidget):
                 self._config["phrase_id"] = phrase_id
 
         save_config(self._config)
-        self._create_engine()
         self._dict_status.setText("已保存")
         QTimer.singleShot(2000, lambda: self._dict_status.setText(""))
 
@@ -713,7 +741,7 @@ class SettingsWindow(QWidget):
         btn_row = QHBoxLayout()
         btn_row.addStretch()
 
-        self._cancel_btn = QPushButton("取消")
+        self._cancel_btn = QPushButton("重置")
         self._cancel_btn.setMinimumWidth(100)
         self._cancel_btn.clicked.connect(self._on_cancel)
         btn_row.addWidget(self._cancel_btn)
@@ -920,7 +948,7 @@ class SettingsWindow(QWidget):
         self._new_hotkey_keys = None
         self._hotkey.set_hotkey(self._config.get("hotkey", []))
         self._apply_config()
-        self._status_label.setText("已恢复到上次保存的设置")
+        self._status_label.setText("已重置为上次保存的设置")
         QTimer.singleShot(2000, lambda: self._update_status())
 
     def _record_hotkey(self):

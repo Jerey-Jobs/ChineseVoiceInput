@@ -47,6 +47,7 @@ class VoiceTypingApp(QObject):
         self._hotkey.start()
 
         self._recording_start_time = None
+        self._recording_duration = 0
 
         self._settings = SettingsWindow(self._config, self._hotkey)
         self._settings.engine_changed.connect(self._on_engine_changed)
@@ -76,25 +77,19 @@ class VoiceTypingApp(QObject):
         self._engine = engine
 
     def _on_recording_start_callback(self):
-        print("[DEBUG] _on_recording_start_callback 被调用（后台线程）")
         self.recording_start_signal.emit()
 
     def _on_recording_stop_callback(self):
-        print("[DEBUG] _on_recording_stop_callback 被调用（后台线程）")
         self.recording_stop_signal.emit()
 
     @pyqtSlot()
     def _on_recording_start_main_thread(self):
-        print("[DEBUG] _on_recording_start_main_thread 被调用（主线程）")
-        self._recording_start_time = __import__("time").time()
+        import time
+        self._recording_start_time = time.time()
         self._overlay.start_recording()
         self._recorder = Recorder(self._engine, app_obj=self)
-        print(f"[DEBUG] Recorder 创建完成: {self._recorder}")
-        print(f"[DEBUG] 连接 text_update 信号...")
         self._recorder.text_update.connect(self._overlay.update_text)
-        print(f"[DEBUG] 启动录音...")
         self._recorder.start()
-        print("[DEBUG] 录音已启动")
 
     @pyqtSlot()
     def _on_recording_stop_main_thread(self):
@@ -103,19 +98,22 @@ class VoiceTypingApp(QObject):
 
     @pyqtSlot(str)
     def _on_recording_done(self, text):
-        print(f"[DEBUG] _on_recording_done 被调用，文本: '{text}'")
+        import time
+        if self._recording_start_time:
+            self._recording_duration = max(1, int(time.time() - self._recording_start_time))
+            self._recording_start_time = None
+        else:
+            self._recording_duration = 0
+
         self._overlay.stop_recording()
         if text:
-            print("[DEBUG] 文本非空，显示原始文字并启动润色")
             self._overlay.set_text(text)
             threading.Thread(target=self._run_polish, args=(text,), daemon=True).start()
         else:
-            print("[DEBUG] 文本为空，不执行粘贴")
             self._overlay.reset()
 
     @pyqtSlot(str)
     def _on_polish_done(self, polished_text):
-        print("[DEBUG] 润色完成，粘贴最终文字")
         self._overlay.set_text(polished_text)
         self._update_stats(polished_text)
         QTimer.singleShot(300, lambda: self._type_text(polished_text))
@@ -133,7 +131,6 @@ class VoiceTypingApp(QObject):
             polished = self._call_llm_qwen(prompt, raw_text)
 
         if polished is None:
-            print("[润色] 失败，使用原始文字")
             polished = raw_text
 
         polished = self._apply_alias_map(polished)
@@ -160,14 +157,9 @@ class VoiceTypingApp(QObject):
                 result_format="message",
             )
             if response.status_code == 200:
-                result = response.output.choices[0].message.content.strip()
-                print(f"[Qwen] OK")
-                return result
-            else:
-                print(f"[Qwen] API 失败: {response.code} {response.message}")
-                return None
-        except Exception as e:
-            print(f"[Qwen] 异常: {e}")
+                return response.output.choices[0].message.content.strip()
+            return None
+        except Exception:
             return None
 
     @staticmethod
@@ -194,11 +186,8 @@ class VoiceTypingApp(QObject):
                 temperature=0.3,
                 timeout=30,
             )
-            result = response.choices[0].message.content.strip()
-            print(f"[Doubao] OK")
-            return result
-        except Exception as e:
-            print(f"[Doubao] 异常: {e}")
+            return response.choices[0].message.content.strip()
+        except Exception:
             return None
 
     def _apply_alias_map(self, text):
@@ -219,14 +208,11 @@ class VoiceTypingApp(QObject):
         return text
 
     def _update_stats(self, text):
-        """更新使用统计和历史记录到 config"""
         import time
         from voice_typing.core.config import save_config
 
-        duration = 0
-        if self._recording_start_time:
-            duration = max(1, int(time.time() - self._recording_start_time))
-            self._recording_start_time = None
+        duration = self._recording_duration
+        self._recording_duration = 0
 
         chars = len(text) if text else 0
         if chars == 0:
@@ -393,13 +379,8 @@ class VoiceTypingApp(QObject):
             # WM_CLASS 输出格式: WM_CLASS(STRING) = "gnome-terminal-server", "Gnome-terminal"
             wm_class = result.stdout.strip().lower()
             is_terminal = any(t in wm_class for t in cls._TERMINAL_CLASSES)
-            print(f"[DEBUG] WM_CLASS: {wm_class}, 是终端: {is_terminal}")
             return is_terminal
-        except FileNotFoundError:
-            print("[ERROR] xdotool 或 xprop 未安装")
-            return False
-        except Exception as e:
-            print(f"[DEBUG] _is_terminal_window 异常: {e}")
+        except Exception:
             return False
 
     def _type_text(self, text):
@@ -446,27 +427,19 @@ class VoiceTypingApp(QObject):
                 pass
 
     def run(self):
-        print("[DEBUG] 显示设置窗口...")
         self._settings.show()
-        print("[DEBUG] 窗口已调用 show()")
-        print(f"[DEBUG] 窗口可见性: {self._settings.isVisible()}")
-        print(f"[DEBUG] 窗口大小: {self._settings.size()}")
         sys.exit(QApplication.instance().exec())
 
 
 def main():
-    print("[DEBUG] 启动应用...")
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
     app.setStyleSheet(DARK_STYLE + OVERLAY_STYLE)
 
-    # 允许 Ctrl+C 退出（PyQt 默认吞掉 SIGINT）
     import signal
     signal.signal(signal.SIGINT, lambda sig, frame: app.quit())
 
-    print("[DEBUG] QApplication 已创建")
     voice_app = VoiceTypingApp()
-    print("[DEBUG] VoiceTypingApp 已初始化")
     voice_app.run()
 
 

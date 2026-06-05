@@ -86,7 +86,11 @@ QComboBox {
 }
 QComboBox:hover { border-color: #22c55e; }
 QComboBox::drop-down { border: none; width: 30px; }
-QComboBox::down-arrow { border: none; }
+QComboBox::down-arrow {
+    image: url(voice_typing/ui/resources/arrow-down.svg);
+    width: 14px;
+    height: 14px;
+}
 QComboBox QAbstractItemView {
     background: #1a1a1a;
     border: 1px solid #333;
