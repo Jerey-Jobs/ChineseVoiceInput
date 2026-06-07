@@ -3,8 +3,8 @@
 import subprocess
 import os
 
-from PyQt5.QtCore import Qt, pyqtSignal, QTimer, QByteArray, QSize, QRect
-from PyQt5.QtGui import QIcon, QPixmap, QPainter, QColor, QBrush
+from PyQt5.QtCore import Qt, pyqtSignal, QTimer, QByteArray, QSize, QRect, QRectF
+from PyQt5.QtGui import QIcon, QPixmap, QPainter, QColor, QBrush, QPen
 from PyQt5.QtSvg import QSvgRenderer
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QLabel,
@@ -45,28 +45,53 @@ class _DarkComboBox(QComboBox):
             container.show()
 
 
-def _make_tray_icon():
-    """加载麦克风图标作为托盘图标"""
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    icon_path = os.path.join(current_dir, "image", "20260518-213528.jpg")
+def _draw_logo(painter, size):
+    """绘制「笔意留白」logo：圆角暗底 + 缺口绿色圆弧"""
+    bg = QColor(13, 13, 13)
+    accent = QColor(34, 197, 94)
 
-    if os.path.exists(icon_path):
-        pix = QPixmap(icon_path)
-        pix = pix.scaled(32, 32, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-        return QIcon(pix)
+    corner = max(2.0, size * 0.22)
+    painter.setRenderHint(QPainter.Antialiasing)
+    painter.setBrush(QBrush(bg))
+    painter.setPen(Qt.NoPen)
+    painter.drawRoundedRect(QRectF(0, 0, size, size), corner, corner)
+
+    # 弧形笔触：小尺寸用更粗的笔以保持气场，大尺寸用更纤细比例
+    if size <= 18:
+        stroke_w = size * 0.14
+        margin = size * 0.15
+    elif size <= 32:
+        stroke_w = size * 0.105
+        margin = size * 0.17
     else:
-        pix = QPixmap(32, 32)
+        stroke_w = size * 0.075
+        margin = size * 0.18
+
+    diameter = size - 2 * margin
+    rect = QRectF(margin, margin, diameter, diameter)
+
+    pen = QPen(accent, stroke_w)
+    pen.setCapStyle(Qt.RoundCap)
+    painter.setPen(pen)
+    painter.setBrush(Qt.NoBrush)
+    # Qt drawArc：0° 在 3 点钟方向，正值逆时针，单位 1/16°
+    # 缺口约 55°，置于右上（约 1 点钟方向），整圈空 305°
+    start_angle = int(57.5 * 16)
+    span_angle = int(305 * 16)
+    painter.drawArc(rect, start_angle, span_angle)
+
+
+def _make_tray_icon():
+    """生成多尺寸 QIcon — 用于托盘和窗口标题"""
+    icon = QIcon()
+    for size in (16, 22, 24, 32, 48, 64, 128, 256):
+        pix = QPixmap(size, size)
         pix.fill(Qt.transparent)
         p = QPainter(pix)
-        p.setRenderHint(QPainter.Antialiasing)
-        p.setBrush(QBrush(QColor(34, 197, 94)))
-        p.setPen(Qt.NoPen)
-        p.drawEllipse(4, 4, 24, 24)
-        p.setBrush(QBrush(QColor(13, 13, 13)))
-        p.drawRoundedRect(13, 7, 6, 10, 2, 2)
-        p.drawRoundedRect(11, 14, 10, 3, 1, 1)
+        _draw_logo(p, size)
         p.end()
-        return QIcon(pix)
+        icon.addPixmap(pix)
+    return icon
 
 
 def _make_eye_icon(visible=True):
