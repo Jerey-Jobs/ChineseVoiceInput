@@ -10,6 +10,11 @@ pip3 install --user -q dashscope pynput faster-whisper huggingface-hub deepmulti
 # 清理旧版 pycache，确保加载最新代码
 find /usr/share/voice-typing -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 
+# 刷新 hicolor 图标缓存，让启动器/dock 拾取新 logo
+if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+    gtk-update-icon-cache -f -t /usr/share/icons/hicolor 2>/dev/null || true
+fi
+
 # 创建配置目录
 mkdir -p ~/.config/voice_typing
 
