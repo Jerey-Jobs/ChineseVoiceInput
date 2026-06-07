@@ -12,13 +12,37 @@ from PyQt5.QtWidgets import (
     QSystemTrayIcon, QMenu, QAction, QApplication, QMessageBox,
     QListWidget, QListWidgetItem, QScrollArea, QCheckBox,
     QRadioButton, QButtonGroup, QStackedWidget, QFrame,
-    QStyledItemDelegate, QStyle,
+    QStyledItemDelegate, QStyle, QListView,
 )
 
 from voice_typing.core.config import load_config, save_config
 from voice_typing.engine.alibaba import AlibabaEngine
 from voice_typing.engine.volcengine import VolcengineEngine
 from voice_typing.core.vocabulary import sync_vocabulary
+
+
+class _DarkComboBox(QComboBox):
+    """暗色主题 QComboBox：showPopup 时把外层容器变透明，消除白边"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        view = QListView()
+        view.setSpacing(2)
+        self.setView(view)
+
+    def showPopup(self):
+        super().showPopup()
+        # 弹出后容器才真正存在，此时取 view 的 parent 容器并设透明
+        container = self.view().parentWidget()
+        if container is not None:
+            container.setAttribute(Qt.WA_TranslucentBackground, True)
+            container.setWindowFlags(
+                container.windowFlags()
+                | Qt.FramelessWindowHint
+                | Qt.NoDropShadowWindowHint
+            )
+            container.setStyleSheet("background: transparent; border: none;")
+            container.show()
 
 
 def _make_tray_icon():
@@ -634,7 +658,7 @@ class SettingsWindow(QWidget):
         engine_card = QGroupBox("引擎选择")
         elayout = QVBoxLayout(engine_card)
 
-        self._engine_combo = QComboBox()
+        self._engine_combo = _DarkComboBox()
         self._engine_combo.addItem("阿里云 Paraformer（云端）", "alibaba")
         self._engine_combo.addItem("火山引擎 BigModel（云端）", "volcengine")
         self._engine_combo.currentIndexChanged.connect(self._on_engine_preview)

@@ -80,33 +80,55 @@ QComboBox {
     background: #1a1a1a;
     border: 1px solid #333;
     border-radius: 12px;
-    padding: 10px 14px;
+    padding: 10px 36px 10px 14px;
     color: #f0f0f0;
     min-height: 20px;
+    outline: none;
 }
 QComboBox:hover { border-color: #22c55e; }
-QComboBox::drop-down { border: none; width: 30px; }
+QComboBox:focus { border-color: #22c55e; }
+QComboBox::drop-down {
+    subcontrol-origin: padding;
+    subcontrol-position: center right;
+    width: 28px;
+    border: none;
+}
 QComboBox::down-arrow {
-    image: url(voice_typing/ui/resources/arrow-down.svg);
     width: 14px;
     height: 14px;
 }
-QComboBox QAbstractItemView {
-    background: #1a1a1a;
+/* 下拉弹出层 — 容器 + 视图 */
+QComboBox QAbstractItemView,
+QComboBox QListView {
+    background-color: #1a1a1a;
     border: 1px solid #333;
     border-radius: 12px;
-    padding: 4px;
+    padding: 6px;
+    margin: 0;
+    outline: none;
+    color: #f0f0f0;
+    selection-background-color: #22c55e;
+    selection-color: #0d0d0d;
+    show-decoration-selected: 1;
 }
-QComboBox QAbstractItemView::item {
-    background: transparent;
-    padding: 8px 12px;
+QComboBox QAbstractItemView::item,
+QComboBox QListView::item {
+    background-color: #1a1a1a;
+    padding: 10px 14px;
+    min-height: 36px;
+    color: #f0f0f0;
+    border-radius: 8px;
+    margin: 2px 0;
 }
-QComboBox QAbstractItemView::item:selected {
-    background: #22c55e;
+QComboBox QAbstractItemView::item:selected,
+QComboBox QListView::item:selected {
+    background-color: #22c55e;
     color: #0d0d0d;
 }
-QComboBox QAbstractItemView::item:hover {
-    background: #222;
+QComboBox QAbstractItemView::item:hover,
+QComboBox QListView::item:hover {
+    background-color: #262626;
+    color: #f0f0f0;
 }
 
 /* 进度条 */

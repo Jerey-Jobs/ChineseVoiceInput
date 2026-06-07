@@ -433,6 +433,7 @@ class VoiceTypingApp(QObject):
 
 def main():
     app = QApplication(sys.argv)
+    app.setStyle("Fusion")
     app.setQuitOnLastWindowClosed(False)
     app.setStyleSheet(DARK_STYLE + OVERLAY_STYLE)
 
