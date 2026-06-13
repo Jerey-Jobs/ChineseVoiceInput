@@ -1,77 +1,105 @@
-# VoiceType - AI 语音输入工具
+# VoiceType · AI 语音输入工具
 
-Ubuntu 环境下的 AI 语音转文字工具，支持阿里云 Paraformer 和本地 faster-whisper 模型。
+[![Release](https://img.shields.io/github/v/release/hongyan199048/voice_typing)](https://github.com/hongyan199048/voice_typing/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](#许可)
+[![Platform](https://img.shields.io/badge/platform-Ubuntu%20%2F%20X11-orange)](#系统要求)
 
-## 功能特性
+> Ubuntu 桌面下的实时 AI 语音转文字工具。按住快捷键说话，松开即把识别并润色后的文字自动粘贴到光标处。
 
-- 🎤 实时语音输入转文字
-- ⌨️ 自动粘贴到光标位置
-- 🔥 全局快捷键触发（默认 Ctrl+Alt+V）
-- 🌐 支持阿里云 Paraformer（云端）
-- 💻 支持 faster-whisper（本地离线）
-- 🎨 暗黑极简 GUI 界面
-- 📊 实时转写浮窗显示
+<!-- 可选：在此放一张 GIF 演示，效果远胜千言。 -->
 
-## 安装
+## ✨ 功能特性
 
-### 方式一：deb 包安装（推荐）
+- 🎤 **实时语音转写** —— 说话时屏幕底部浮窗同步显示
+- ⌨️ **自动粘贴** —— 松开快捷键，文字直接落到当前光标位置
+- 🔥 **全局快捷键** —— 支持「组合键」与「单键长按」两种触发模式（默认 `Ctrl+Alt+V`）
+- ☁️ **双云端引擎** —— 阿里云 Paraformer / 火山引擎 BigModel，任选其一
+- 🪄 **大模型润色** —— 自动清洗口语、补标点，三档强度可调（Qwen-Plus / 豆包）
+- 📒 **自定义词库** —— 别名替换，专有名词不再识别错
+- 🎨 **暗黑极简界面** —— 设置窗口 + 可拖拽实时浮窗
 
-从 [GitHub Releases](https://github.com/hongyan199048/voice_typing/releases) 下载最新版本：
+## 系统要求
+
+- **操作系统**：Ubuntu / 其他 Linux 桌面，**X11 会话**（Wayland 下全局快捷键与粘贴可能失效）
+- **Python**：3.8+（从源码运行时）
+- **云端账号**：阿里云 DashScope 或火山引擎二选一
+
+## 📦 安装
+
+### 方式一：deb 包（推荐）
+
+复制下面整段即可自动下载并安装**最新版**，无需手动填版本号：
 
 ```bash
-wget https://github.com/hongyan199048/voice_typing/releases/download/v1.0.0/voice-typing_1.0.0_amd64.deb
-sudo dpkg -i voice-typing_1.0.0_amd64.deb
-sudo apt-get install -f  # 如有依赖问题
+# 自动获取最新 Release 的 deb 并安装
+URL=$(curl -s https://api.github.com/repos/hongyan199048/voice_typing/releases/latest \
+  | grep "browser_download_url.*\.deb" | cut -d '"' -f 4)
+wget -O voice-typing.deb "$URL"
+sudo dpkg -i voice-typing.deb
+sudo apt-get install -f   # 自动补齐依赖
 ```
 
-安装后从应用菜单启动，或命令行运行 `voice-typing`
+> 也可前往 [GitHub Releases](https://github.com/hongyan199048/voice_typing/releases) 手动下载指定版本。
+
+安装后从应用菜单启动，或在终端运行 `voice-typing`。
 
 ### 方式二：从源码运行
 
 ```bash
+# 系统依赖
+sudo apt install xclip xdotool portaudio19-dev
+
+# 拉取代码并安装 Python 依赖
 git clone https://github.com/hongyan199048/voice_typing.git
 cd voice_typing
 pip install -r requirements.txt
-python main.py
+
+# 启动
+python main.py        # 或：python -m voice_typing
 ```
 
-## 使用
+## 🚀 使用
 
-首次运行会显示设置窗口：
+首次运行会打开设置窗口：
 
-1. **选择引擎**：阿里云（需 API Key）或本地模型
-2. **配置 API**：使用阿里云时，输入 [DashScope API Key](https://dashscope.console.aliyun.com/)
-3. **下载模型**：使用本地模式时，选择模型大小（tiny/base/small）并下载
-4. **设置快捷键**：点击"录制快捷键"，按下组合键
+1. **选择引擎** —— 阿里云 Paraformer 或 火山引擎 BigModel
+2. **配置凭证**
+   - 阿里云：填入 [DashScope API Key](https://dashscope.console.aliyun.com/)
+   - 火山引擎：填入 [ARK](https://console.volcengine.com/ark/) 的 App ID + Access Token
+3. **润色强度** —— 轻度 / 中度 / 重度（可关闭）
+4. **设置快捷键** —— 点击「录制快捷键」，按下你想要的组合
+5. *(可选)* **自定义词库** —— 添加别名替换规则
 
-**语音输入**：
+**语音输入流程**：
+
 1. 按住快捷键开始录音
-2. 屏幕底部显示实时转写
-3. 松开快捷键，文字自动粘贴到光标位置
+2. 屏幕底部浮窗实时显示转写内容
+3. 松开快捷键 → 大模型润色 → 文字自动粘贴到光标位置
 
-## 注意事项
+## 🔧 故障排查
 
-- **本地模型下载**：faster-whisper 模型托管在 Hugging Face，国内访问需要 VPN
-- **推荐方案**：国内用户建议使用阿里云 Paraformer 引擎，无需下载模型，识别速度快
+| 现象 | 排查方向 |
+|------|----------|
+| 快捷键无响应 | 是否与系统快捷键冲突；尝试更换组合键；确认运行在 X11 而非 Wayland |
+| 录音无声音 | 检查麦克风权限；运行 `arecord -l` 确认音频设备 |
+| 粘贴失败 | 确认已安装 `xclip` 与 `xdotool`；确认处于 X11 会话 |
+| 识别报错 / 无结果 | 检查 API Key 是否正确、网络是否可达对应云服务 |
 
-## 故障排查
+## ⚙️ 配置文件
 
-**快捷键不响应**
-- 检查是否与系统快捷键冲突
-- 尝试更换快捷键组合
+配置保存在：
 
-**模型下载失败**
-- 确保网络可访问 Hugging Face（可能需要 VPN）
-- 或切换到阿里云引擎
+```
+~/.config/voice_typing/config.json
+```
 
-**录音无声音**
-- 检查麦克风权限
-- 运行 `arecord -l` 确认音频设备
+包含引擎选择、API 凭证、润色强度、快捷键、自定义词库等。
 
-## 配置文件
+## 📄 许可
 
-配置保存在 `~/.config/voice_typing/config.json`
+[MIT License](LICENSE)
 
-## 许可
+## 🔗 相关链接
 
-MIT License
+- 阿里云 DashScope 控制台：<https://dashscope.console.aliyun.com/>
+- 火山引擎 ARK 控制台：<https://console.volcengine.com/ark/>
