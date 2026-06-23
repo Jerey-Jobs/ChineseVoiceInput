@@ -26,6 +26,7 @@ class VoiceTypingApp(QObject):
     recording_start_signal = pyqtSignal()
     recording_stop_signal = pyqtSignal()
     polish_done = pyqtSignal(str)
+    polish_progress = pyqtSignal(str)
 
     def __init__(self):
         super().__init__()
@@ -38,6 +39,7 @@ class VoiceTypingApp(QObject):
         self.recording_start_signal.connect(self._on_recording_start_main_thread)
         self.recording_stop_signal.connect(self._on_recording_stop_main_thread)
         self.polish_done.connect(self._on_polish_done)
+        self.polish_progress.connect(self._on_polish_progress)
 
         self._hotkey = HotkeyManager(self._config.get("hotkey", ["ctrl", "alt", "v"]))
         self._hotkey.set_callbacks(
@@ -113,22 +115,36 @@ class VoiceTypingApp(QObject):
             self._overlay.reset()
 
     @pyqtSlot(str)
+    def _on_polish_progress(self, partial_text):
+        self._overlay.set_text(partial_text)
+
+    @pyqtSlot(str)
     def _on_polish_done(self, polished_text):
         self._overlay.set_text(polished_text)
         self._update_stats(polished_text)
-        QTimer.singleShot(300, lambda: self._type_text(polished_text))
-        QTimer.singleShot(2500, self._overlay.reset)
+        self._type_text(polished_text)
+        QTimer.singleShot(2200, self._overlay.reset)
+
+    # 短于该字数的语音结果跳过 LLM 润色，直接粘贴（追求短句低延迟）
+    _POLISH_BYPASS_CHARS = 15
 
     def _run_polish(self, raw_text):
-        engine = self._config.get("engine", "alibaba")
+        if len(raw_text) < self._POLISH_BYPASS_CHARS:
+            self.polish_done.emit(self._apply_alias_map(raw_text))
+            return
+
         strength = self._config.get("polish_strength", "medium")
         prompt = self._POLISH.get(strength, self._POLISH["medium"])
         prompt += self._build_vocabulary_hint()
 
-        if engine == "volcengine":
-            polished = self._call_llm_doubao(prompt, raw_text)
-        else:
-            polished = self._call_llm_qwen(prompt, raw_text)
+        # 润色路由：DeepSeek > 豆包 > 阿里云 Qwen
+        polished = self._call_llm_deepseek_stream(prompt, raw_text)
+        if polished is None:
+            engine = self._config.get("engine", "alibaba")
+            if engine == "volcengine":
+                polished = self._call_llm_doubao_stream(prompt, raw_text)
+            else:
+                polished = self._call_llm_qwen(prompt, raw_text)
 
         if polished is None:
             polished = raw_text
@@ -162,6 +178,48 @@ class VoiceTypingApp(QObject):
         except Exception:
             return None
 
+    def _call_llm_deepseek_stream(self, system_prompt, user_text):
+        """流式调用 DeepSeek：边收 token 边推送到浮窗，返回完整文本。失败返回 None。"""
+        try:
+            from openai import OpenAI
+            api_key = self._config.get("deepseek_api_key", "")
+            if not api_key:
+                return None
+            print(f"[Polish] DeepSeek 流式润色，原文 {len(user_text)} 字")
+            client = OpenAI(
+                api_key=api_key,
+                base_url="https://api.deepseek.com",
+            )
+            stream = client.chat.completions.create(
+                model="deepseek-chat",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_text},
+                ],
+                temperature=0.3,
+                timeout=30,
+                stream=True,
+            )
+            chunks = []
+            first_chunk = True
+            for chunk in stream:
+                if not chunk.choices:
+                    continue
+                delta = chunk.choices[0].delta.content
+                if not delta:
+                    continue
+                if first_chunk:
+                    print(f"[Polish] 首个 chunk: {delta!r}")
+                    first_chunk = False
+                chunks.append(delta)
+                self.polish_progress.emit("".join(chunks))
+            final = "".join(chunks).strip()
+            print(f"[Polish] DeepSeek 完成，输出 {len(final)} 字")
+            return final
+        except Exception as e:
+            print(f"[Polish] DeepSeek 异常: {type(e).__name__}: {e}")
+            return None
+
     @staticmethod
     def _call_llm_doubao(system_prompt, user_text):
         """调用豆包，成功返回文字，失败返回 None"""
@@ -188,6 +246,52 @@ class VoiceTypingApp(QObject):
             )
             return response.choices[0].message.content.strip()
         except Exception:
+            return None
+
+    def _call_llm_doubao_stream(self, system_prompt, user_text):
+        """流式调用豆包：边收 token 边推送到浮窗，返回完整文本。失败返回 None。"""
+        try:
+            from openai import OpenAI
+            from voice_typing.core.config import load_config
+            config = load_config()
+            api_key = config.get("doubao_api_key", "")
+            endpoint_id = config.get("doubao_endpoint_id", "")
+            if not api_key or not endpoint_id:
+                print(f"[Polish] 豆包润色未配置: api_key={'已填' if api_key else '空'}, endpoint_id={'已填' if endpoint_id else '空'}")
+                return None
+            print(f"[Polish] 启动流式润色，原文 {len(user_text)} 字")
+            client = OpenAI(
+                api_key=api_key,
+                base_url="https://ark.cn-beijing.volces.com/api/v3",
+            )
+            stream = client.chat.completions.create(
+                model=endpoint_id,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_text},
+                ],
+                temperature=0.3,
+                timeout=30,
+                stream=True,
+            )
+            chunks = []
+            first_chunk = True
+            for chunk in stream:
+                if not chunk.choices:
+                    continue
+                delta = chunk.choices[0].delta.content
+                if not delta:
+                    continue
+                if first_chunk:
+                    print(f"[Polish] 收到首个 chunk: {delta!r}")
+                    first_chunk = False
+                chunks.append(delta)
+                self.polish_progress.emit("".join(chunks))
+            final = "".join(chunks).strip()
+            print(f"[Polish] 流式完成，输出 {len(final)} 字")
+            return final
+        except Exception as e:
+            print(f"[Polish] 豆包润色异常: {type(e).__name__}: {e}")
             return None
 
     def _apply_alias_map(self, text):

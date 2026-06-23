@@ -757,6 +757,16 @@ class SettingsWindow(QWidget):
         hlayout.addLayout(hrow)
         layout.addWidget(hotkey_card)
 
+        # 通用文本润色（独立于 ASR 引擎，DeepSeek 优先）
+        polish_llm_card = QGroupBox("文本润色模型")
+        polish_llm_layout = QVBoxLayout(polish_llm_card)
+        deepseek_wrapper, self._deepseek_api_key_input = self._make_password_input("DeepSeek API Key（优先使用）")
+        polish_llm_layout.addWidget(deepseek_wrapper)
+        polish_llm_hint = QLabel("填了 DeepSeek Key 就用 DeepSeek 润色，不填则用引擎自带润色（豆包/阿里 Qwen）")
+        polish_llm_hint.setObjectName("subtitle")
+        polish_llm_layout.addWidget(polish_llm_hint)
+        layout.addWidget(polish_llm_card)
+
         # 润色强度
         polish_card = QGroupBox("润色强度")
         playout = QVBoxLayout(polish_card)
@@ -772,7 +782,7 @@ class SettingsWindow(QWidget):
         playout.addWidget(self._polish_light)
         playout.addWidget(self._polish_medium)
         playout.addWidget(self._polish_strong)
-        polish_hint = QLabel("ASR 识别后调用大模型润色文本的力度（服务商在上方选择）")
+        polish_hint = QLabel("润色力度调节")
         polish_hint.setObjectName("subtitle")
         playout.addWidget(polish_hint)
         layout.addWidget(polish_card)
@@ -920,6 +930,7 @@ class SettingsWindow(QWidget):
 
         self._doubao_api_key_input.setText(self._config.get("doubao_api_key", ""))
         self._doubao_endpoint_input.setText(self._config.get("doubao_endpoint_id", ""))
+        self._deepseek_api_key_input.setText(self._config.get("deepseek_api_key", ""))
 
         self._refresh_dict_list()
 
@@ -954,6 +965,7 @@ class SettingsWindow(QWidget):
 
         self._config["doubao_api_key"] = self._doubao_api_key_input.text()
         self._config["doubao_endpoint_id"] = self._doubao_endpoint_input.text()
+        self._config["deepseek_api_key"] = self._deepseek_api_key_input.text()
 
         if self._new_hotkey_keys is not None:
             self._config["hotkey"] = self._new_hotkey_keys

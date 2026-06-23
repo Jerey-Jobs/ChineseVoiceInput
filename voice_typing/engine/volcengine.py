@@ -13,7 +13,7 @@ import websockets
 from voice_typing.engine.base import BaseEngine
 
 WS_URL = "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel"
-RESOURCE_ID = "volc.seedasr.sauc.duration"
+RESOURCE_ID = "volc.bigasr.sauc.duration"
 
 HDR_CONFIG = bytes([0x11, 0x10, 0x11, 0x00])
 HDR_AUDIO = bytes([0x11, 0x20, 0x01, 0x00])
@@ -26,19 +26,30 @@ def _build_frame(header: bytes, payload: bytes) -> bytes:
 
 
 def _parse_response(msg: bytes):
-    """解析二进制响应帧，返回 (text, is_final)"""
-    if len(msg) < 8:
+    """解析二进制响应帧，返回 (text, is_final)
+
+    BigModel 2.0 帧布局: [4字节header][4字节序列号][4字节payload长度][payload]
+    payload 是否 gzip 由 header 字节 2 的低 4 位决定（0=无压缩，1=gzip）。
+    """
+    if len(msg) < 12:
         return "", False
-    payload_len = struct.unpack(">I", msg[4:8])[0]
-    payload = gzip.decompress(msg[8:8 + payload_len])
+    compression = msg[2] & 0x0F
+    payload_len = struct.unpack(">I", msg[8:12])[0]
+    payload = msg[12:12 + payload_len]
+    if compression == 1:
+        payload = gzip.decompress(payload)
     data = json.loads(payload)
-    if data.get("code") != 20000000:
+    if "code" in data and data["code"] != 20000000:
         return "", False
-    results = data.get("result", [])
-    if not results:
-        return "", False
-    text = results[0].get("text", "")
-    is_final = results[0].get("definite", False)
+    results = data.get("result", {})
+    if isinstance(results, list):
+        if not results:
+            return "", False
+        results = results[0]
+    text = results.get("text", "")
+    # BigModel 2.0 的 definite 在 utterances[0] 里；服务端最后帧会带 NEG_SEQUENCE flag
+    utterances = results.get("utterances") or []
+    is_final = (utterances and utterances[0].get("definite", False)) or (msg[1] & 0x02) != 0
     return text, is_final
 
 
