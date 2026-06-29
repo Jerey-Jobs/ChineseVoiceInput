@@ -16,6 +16,7 @@ DEFAULT_CONFIG = {
     "custom_vocabulary": [],        # 自定义热词列表：["CUDA", "GitHub", "Python"]
     "phrase_id": "",                # 阿里云热词表ID（UUID，由VocabularyService创建）
     "polish_strength": "medium",    # 润色强度：light / medium / strong
+    "custom_style_prompt": "",      # 自定义语音风格提示词，追加到润色 prompt 末尾
     "doubao_api_key": "",           # 豆包 ARK API Key
     "doubao_endpoint_id": "",       # 豆包推理接入点 ID（ep-xxxxxxxxxxxx）
     "stats": {
@@ -45,5 +46,20 @@ def load_config():
 
 def save_config(config):
     os.makedirs(CONFIG_DIR, exist_ok=True)
+    # 合并磁盘上已有的自定义词库，避免覆盖外部手动添加的词汇
+    if os.path.exists(CONFIG_PATH):
+        try:
+            with open(CONFIG_PATH, "r") as f:
+                disk = json.load(f)
+            disk_vocab = disk.get("custom_vocabulary", [])
+            mem_vocab = config.get("custom_vocabulary", [])
+            mem_terms = {item["term"] for item in mem_vocab if "term" in item}
+            for item in disk_vocab:
+                if item.get("term") and item["term"] not in mem_terms:
+                    mem_vocab.append(item)
+                    mem_terms.add(item["term"])
+            config["custom_vocabulary"] = mem_vocab
+        except (json.JSONDecodeError, KeyError):
+            pass
     with open(CONFIG_PATH, "w") as f:
         json.dump(config, f, indent=2, ensure_ascii=False)
