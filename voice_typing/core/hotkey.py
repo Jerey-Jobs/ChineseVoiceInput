@@ -70,8 +70,12 @@ class HotkeyManager:
     LONG_PRESS_SEC = 0.12
     MAX_KEY_HOLD_SEC = 10.0        # 单键最长保持，超时自动清除
     STALE_CHECK_INTERVAL = 3.0     # 卡键检测间隔
+    DOUBLE_TAP_SEC = 0.35          # 双击间隔阈值
 
-    def __init__(self, hotkey_list=None):
+    def __init__(self, hotkey_list=None, mode="hold"):
+        """
+        mode: "hold" = 按住说话（默认），"double_tap" = 双击触发，任意键停止
+        """
         self._keys = set()
         self._press_times = {}      # key → timestamp，检测卡键
         self._lock = threading.RLock()
@@ -85,6 +89,11 @@ class HotkeyManager:
         self._long_press_timer = None
         self._paused = False
         self._stale_timer_running = False
+        self._mode = mode
+
+        # 双击模式状态
+        self._last_tap_time = 0
+        self._tap_key = None
 
         if hotkey_list:
             self.set_hotkey(hotkey_list)
@@ -95,6 +104,11 @@ class HotkeyManager:
         keys = frozenset(_str_to_key(s) for s in hotkey_list)
         self._hotkey_set = keys
         self._is_long_press = len(hotkey_list) == 1
+        self._clear_state()
+
+    def set_mode(self, mode):
+        """切换模式: 'hold' 或 'double_tap'"""
+        self._mode = mode
         self._clear_state()
 
     def set_callbacks(self, on_start, on_stop):
@@ -243,7 +257,9 @@ class HotkeyManager:
             if not self._hotkey_set or self._paused:
                 return
 
-            if self._is_long_press:
+            if self._mode == "double_tap":
+                self._handle_double_tap_press(k)
+            elif self._is_long_press:
                 if k in self._hotkey_set and self._press_time is None:
                     self._press_time = time.time()
                     if self.LONG_PRESS_SEC <= 0:
@@ -265,11 +281,37 @@ class HotkeyManager:
             if not self._hotkey_set or self._paused:
                 return
 
-            if self._is_long_press:
+            if self._mode == "double_tap":
+                # 双击模式中释放不做处理（录音由任意键停止）
+                pass
+            elif self._is_long_press:
                 if k in self._hotkey_set:
                     self._on_long_press_release()
             else:
                 self._check_combo_stop()
+
+    # ---- 双击模式 ----
+
+    def _handle_double_tap_press(self, k):
+        """双击检测：双击触发键开始录音，录音中按任意键停止"""
+        now = time.time()
+        if self._recording:
+            # 录音中，任意键停止
+            self._recording = False
+            if self._on_stop:
+                self._on_stop()
+            return
+
+        # 非录音中，检测是否是触发键的双击
+        if k in self._hotkey_set:
+            if now - self._last_tap_time < self.DOUBLE_TAP_SEC:
+                # 双击成功，开始录音
+                self._last_tap_time = 0
+                self._recording = True
+                if self._on_start:
+                    self._on_start()
+            else:
+                self._last_tap_time = now
 
     @staticmethod
     def record_key_sequence(on_done):

@@ -579,6 +579,12 @@ class SettingsWindow(QWidget):
         add_btn.setFixedWidth(80)
         term_row.addWidget(add_btn)
 
+        sync_btn = QPushButton("同步热词")
+        sync_btn.setFixedWidth(80)
+        sync_btn.setStyleSheet("QPushButton { background: #2563eb; color: white; }")
+        sync_btn.clicked.connect(self._sync_hotwords)
+        term_row.addWidget(sync_btn)
+
         self._dict_status = QLabel("")
         self._dict_status.setObjectName("status")
         term_row.addWidget(self._dict_status)
@@ -657,6 +663,34 @@ class SettingsWindow(QWidget):
         save_config(self._config)
         self._dict_status.setText("已保存")
         QTimer.singleShot(2000, lambda: self._dict_status.setText(""))
+
+    def _sync_hotwords(self):
+        """手动同步热词到阿里云"""
+        api_key = self._config.get("alibaba_api_key", "")
+        if not api_key:
+            self._dict_status.setText("请先配置阿里云 API Key")
+            QTimer.singleShot(3000, lambda: self._dict_status.setText(""))
+            return
+        vocab = self._config.get("custom_vocabulary", [])
+        hotwords = [v["term"] for v in vocab if v.get("term")]
+        if not hotwords:
+            self._dict_status.setText("词库为空")
+            QTimer.singleShot(2000, lambda: self._dict_status.setText(""))
+            return
+        self._dict_status.setText("正在同步热词...")
+        QApplication.processEvents()
+        phrase_id = sync_vocabulary(
+            api_key=api_key,
+            hotwords=hotwords,
+            phrase_id=self._config.get("phrase_id", ""),
+        )
+        if phrase_id:
+            self._config["phrase_id"] = phrase_id
+            save_config(self._config)
+            self._dict_status.setText(f"同步成功！{len(hotwords)} 个热词")
+        else:
+            self._dict_status.setText("同步失败")
+        QTimer.singleShot(3000, lambda: self._dict_status.setText(""))
 
     # ---------- Page 3: 设置 ----------
 
@@ -762,6 +796,31 @@ class SettingsWindow(QWidget):
         self._clear_hotkey_btn.clicked.connect(self._clear_hotkey)
         hrow.addWidget(self._clear_hotkey_btn)
         hlayout.addLayout(hrow)
+
+        # 快捷键模式选择
+        mode_row = QHBoxLayout()
+        mode_label = QLabel("触发模式：")
+        mode_row.addWidget(mode_label)
+        self._mode_hold = QPushButton("按住说话")
+        self._mode_double = QPushButton("双击触发")
+        current_mode = self._config.get("hotkey_mode", "hold")
+        self._mode_hold.setCheckable(True)
+        self._mode_double.setCheckable(True)
+        self._mode_hold.setChecked(current_mode == "hold")
+        self._mode_double.setChecked(current_mode == "double_tap")
+        mode_style = """
+            QPushButton { padding: 6px 12px; border-radius: 8px; border: 1px solid #333; }
+            QPushButton:checked { background: #2563eb; color: white; border: 1px solid #2563eb; }
+        """
+        self._mode_hold.setStyleSheet(mode_style)
+        self._mode_double.setStyleSheet(mode_style)
+        self._mode_hold.clicked.connect(lambda: self._set_hotkey_mode("hold"))
+        self._mode_double.clicked.connect(lambda: self._set_hotkey_mode("double_tap"))
+        mode_row.addWidget(self._mode_hold)
+        mode_row.addWidget(self._mode_double)
+        mode_row.addStretch()
+        hlayout.addLayout(mode_row)
+
         layout.addWidget(hotkey_card)
 
         # 通用文本润色（独立于 ASR 引擎，DeepSeek 优先）
@@ -1046,6 +1105,15 @@ class SettingsWindow(QWidget):
         self._apply_config()
         self._status_label.setText("已重置为上次保存的设置")
         QTimer.singleShot(2000, lambda: self._update_status())
+
+    def _set_hotkey_mode(self, mode):
+        """切换快捷键触发模式"""
+        self._config["hotkey_mode"] = mode
+        self._hotkey.set_mode(mode)
+        self._mode_hold.setChecked(mode == "hold")
+        self._mode_double.setChecked(mode == "double_tap")
+        from voice_typing.core.config import save_config
+        save_config(self._config)
 
     def _record_hotkey(self):
         self._hotkey_btn.setText("按下快捷键组合...")

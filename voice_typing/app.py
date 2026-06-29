@@ -41,7 +41,10 @@ class VoiceTypingApp(QObject):
         self.polish_done.connect(self._on_polish_done)
         self.polish_progress.connect(self._on_polish_progress)
 
-        self._hotkey = HotkeyManager(self._config.get("hotkey", ["ctrl", "alt", "v"]))
+        self._hotkey = HotkeyManager(
+            self._config.get("hotkey", ["ctrl", "alt", "v"]),
+            mode=self._config.get("hotkey_mode", "hold"),
+        )
         self._hotkey.set_callbacks(
             on_start=self._on_recording_start_callback,
             on_stop=self._on_recording_stop_callback,
@@ -142,6 +145,9 @@ class VoiceTypingApp(QObject):
             prompt += f"\n\n## 输出风格要求\n{custom_style}"
 
         # 润色路由：DeepSeek > 豆包 > 阿里云 Qwen
+        print(f"[润色] 强度: {strength}")
+        print(f"[润色] 原文: {raw_text}")
+        print(f"[润色] System Prompt:\n{prompt[:200]}...")
         polished = self._call_llm_deepseek_stream(prompt, raw_text)
         if polished is None:
             engine = self._config.get("engine", "alibaba")
@@ -153,6 +159,7 @@ class VoiceTypingApp(QObject):
         if polished is None:
             polished = raw_text
 
+        print(f"[润色] 结果: {polished}")
         polished = self._apply_alias_map(polished)
         self.polish_done.emit(polished)
 

@@ -126,7 +126,7 @@ class VoiceTypingApp(QObject):
         QTimer.singleShot(2200, self._overlay.reset)
 
     # 短于该字数的语音结果跳过 LLM 润色，直接粘贴（追求短句低延迟）
-    _POLISH_BYPASS_CHARS = 15
+    _POLISH_BYPASS_CHARS = 10
 
     def _run_polish(self, raw_text):
         if len(raw_text) < self._POLISH_BYPASS_CHARS:
@@ -426,7 +426,7 @@ class VoiceTypingApp(QObject):
             "- 将步骤、流程内容排版为有序步骤列表\n"
             "- 适当使用加粗（**文字**）标记关键术语或重点\n"
             "- 修复不通顺的句子（在保持原意的前提下，仅做语序微调）\n"
-            "\n"
+            "- 如果文字很长 超过100字，你可以适度的优化文字顺序，使得语句更加通顺\n"
             "## 重要区分\n"
             "- 用不同措辞重申同一个意思 → 是强调，保留\n"
             "- 逐字逐句完全相同的内容 → 是重复，去重\n"
