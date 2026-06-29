@@ -1,83 +1,145 @@
-"""屏幕下方浮窗 — 实时显示语音转写文字"""
+"""屏幕下方浮窗 — Siri 风格彩色光晕动画"""
 
+import math
 import random
-from PyQt5.QtCore import Qt, QTimer, QRect, QSize, QPropertyAnimation, QEasingCurve, pyqtProperty
-from PyQt5.QtGui import QPainter, QColor, QBrush, QPen, QFontMetrics, QFont
+from PyQt5.QtCore import Qt, QTimer, QRect, QPropertyAnimation, QEasingCurve, QPointF
+from PyQt5.QtGui import (
+    QPainter, QColor, QBrush, QPen, QLinearGradient, QRadialGradient,
+    QFontMetrics, QPainterPath
+)
 from PyQt5.QtWidgets import QWidget, QLabel, QHBoxLayout, QVBoxLayout, QApplication
 
 
-class StatusIndicator(QWidget):
-    """状态指示器：绿色圆球（待机）/ 红色圆球（录音）"""
+class SiriGlowWidget(QWidget):
+    """Siri 风格动画组件：待机旋转圆环，录音彩色波浪"""
+
+    MODE_IDLE = 0
+    MODE_RECORDING = 1
 
     def __init__(self):
         super().__init__()
-        self.setFixedSize(24, 24)
-        self._recording = False
+        self.setMinimumSize(36, 36)
+        self._phase = 0.0
+        self._amplitude = 0.0
+        self._target_amplitude = 0.0
+        self._mode = self.MODE_IDLE
 
-    def set_recording(self, recording: bool):
-        self._recording = recording
-        self.update()
+        self._colors = [
+            QColor(147, 51, 234),   # 紫
+            QColor(59, 130, 246),   # 蓝
+            QColor(6, 182, 212),    # 青
+            QColor(16, 185, 129),   # 绿
+            QColor(236, 72, 153),   # 粉
+            QColor(245, 158, 11),   # 橙
+        ]
 
-    def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
-        painter.setPen(Qt.NoPen)
-
-        # 根据状态选择颜色
-        if self._recording:
-            color = QColor(239, 68, 68)  # 红色
-        else:
-            color = QColor(34, 197, 94)  # 绿色
-
-        painter.setBrush(QBrush(color))
-        painter.drawEllipse(4, 4, 16, 16)
-
-
-class WaveformWidget(QWidget):
-    """波形动画组件"""
-
-    BAR_COUNT = 5
-    BAR_WIDTH = 3
-    BAR_SPACING = 4
-    MAX_HEIGHT = 18
-    TOTAL_WIDTH = BAR_COUNT * (BAR_WIDTH + BAR_SPACING) - BAR_SPACING  # 31px
-
-    def __init__(self):
-        super().__init__()
-        self.setMinimumSize(self.TOTAL_WIDTH, 24)
-        self.setSizePolicy(self.sizePolicy().Fixed, self.sizePolicy().Fixed)
-        self._wave_heights = [0.0] * self.BAR_COUNT
         self._timer = QTimer(self)
-        self._timer.timeout.connect(self._update_wave)
+        self._timer.timeout.connect(self._tick)
+        # 待机时也转动
+        self._timer.start(16)
 
     def start(self):
+        self._mode = self.MODE_RECORDING
+        self._target_amplitude = 0.8
+        if not self._timer.isActive():
+            self._timer.start(16)
         self.show()
-        self._timer.start(50)  # 20fps
 
     def stop(self):
-        self._timer.stop()
-        self._wave_heights = [0.0] * self.BAR_COUNT
-        self.update()
+        self._mode = self.MODE_IDLE
+        self._target_amplitude = 0.0
+
+    def hide_animation(self):
+        """完全隐藏"""
+        self._mode = self.MODE_IDLE
+        self._target_amplitude = 0.0
+        self._amplitude = 0.0
         self.hide()
 
-    def _update_wave(self):
-        for i in range(len(self._wave_heights)):
-            target = random.uniform(0.3, 1.0)
-            self._wave_heights[i] = self._wave_heights[i] * 0.6 + target * 0.4
+    def _tick(self):
+        self._phase += 0.04
+        self._amplitude += (self._target_amplitude - self._amplitude) * 0.1
         self.update()
 
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
+
+        w = self.width()
+        h = self.height()
+        cx = w / 2
+        cy = h / 2
+
+        if self._mode == self.MODE_RECORDING and self._amplitude > 0.05:
+            self._draw_waves(painter, w, h, cx, cy)
+        else:
+            self._draw_spinning_ring(painter, cx, cy)
+
+    def _draw_spinning_ring(self, painter, cx, cy):
+        """待机：渐变彩色底色 + 旋转圆点"""
+        radius = 14
+        dot_radius = 3.5
+        n = len(self._colors)
+
+        # 渐变底色圆，颜色随 phase 变化
+        idx1 = int(self._phase) % n
+        idx2 = (idx1 + 1) % n
+        t = self._phase - int(self._phase)
+        c1 = self._colors[idx1]
+        c2 = self._colors[idx2]
+        bg_gradient = QRadialGradient(cx, cy, 20)
+        gc1 = QColor(c1.red(), c1.green(), c1.blue(), 60)
+        gc2 = QColor(c2.red(), c2.green(), c2.blue(), 30)
+        bg_gradient.setColorAt(0, gc1)
+        bg_gradient.setColorAt(0.7, gc2)
+        bg_gradient.setColorAt(1, QColor(0, 0, 0, 0))
         painter.setPen(Qt.NoPen)
+        painter.setBrush(QBrush(bg_gradient))
+        painter.drawEllipse(QPointF(cx, cy), 20, 20)
 
-        for i, height in enumerate(self._wave_heights):
-            x = i * (self.BAR_WIDTH + self.BAR_SPACING)
-            h = int(height * self.MAX_HEIGHT)
-            y = (self.height() - h) // 2
+        # 旋转圆点
+        for i, color in enumerate(self._colors):
+            angle = self._phase * 3 + i * (2 * math.pi / n)
+            x = cx + radius * math.cos(angle)
+            y = cy + radius * math.sin(angle)
+            alpha = 255 - i * 30
+            c = QColor(color)
+            c.setAlpha(max(alpha, 80))
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QBrush(c))
+            r = dot_radius * (1.0 - i * 0.08)
+            painter.drawEllipse(QPointF(x, y), r, r)
 
-            painter.setBrush(QBrush(QColor(239, 68, 68, 200)))
-            painter.drawRoundedRect(x, y, self.BAR_WIDTH, h, 2, 2)
+    def _draw_waves(self, painter, w, h, cx, cy):
+        """录音：多层彩色波浪线条"""
+        for idx, color in enumerate(self._colors):
+            offset = idx * (math.pi * 2 / len(self._colors))
+            freq = 0.03 + idx * 0.005
+            amp = self._amplitude * (8 + idx * 2)
+            phase = self._phase * 2 + offset
+
+            # 只画线条
+            line_path = QPainterPath()
+            line_path.moveTo(0, cy + math.sin(phase) * amp * 0)
+            for x in range(0, w + 2, 2):
+                y = cy + math.sin(x * freq + phase) * amp * math.sin(math.pi * x / w)
+                line_path.lineTo(x, y)
+
+            pen_color = QColor(color)
+            pen_color.setAlpha(int(200 * self._amplitude))
+            painter.setPen(QPen(pen_color, 2.5))
+            painter.setBrush(Qt.NoBrush)
+            painter.drawPath(line_path)
+
+        # 中心发光圆
+        glow_radius = 10 + self._amplitude * 6 * math.sin(self._phase * 4)
+        gradient = QRadialGradient(cx, cy, glow_radius)
+        gradient.setColorAt(0, QColor(255, 255, 255, int(200 * self._amplitude)))
+        gradient.setColorAt(0.5, QColor(147, 51, 234, int(100 * self._amplitude)))
+        gradient.setColorAt(1, QColor(59, 130, 246, 0))
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QBrush(gradient))
+        painter.drawEllipse(QPointF(cx, cy), glow_radius, glow_radius)
 
 
 class OverlayWindow(QWidget):
@@ -98,175 +160,146 @@ class OverlayWindow(QWidget):
         self._dragging = False
         self._drag_position = None
 
-        # 组件
-        self._indicator = StatusIndicator()
-        self._waveform = WaveformWidget()
-        self._waveform.hide()  # 初始隐藏
-        self._text_received = False  # 当前录音周期是否已收到文字
+        # Siri 光晕组件
+        self._glow = SiriGlowWidget()
+        self._text_received = False
 
         self._text_label = QLabel("")
         self._text_label.setStyleSheet(
-            "color: #f0f0f0; font-size: 10pt; background: transparent; padding: 0px;"
+            "color: #f0f0f0; font-size: 11pt; background: transparent; padding: 0px;"
         )
         self._text_label.setWordWrap(False)
-        self._text_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        self._text_label.hide()  # 初始隐藏
+        self._text_label.setAlignment(Qt.AlignCenter)
+        self._text_label.hide()
 
-        # 布局
-        self._content_layout = QHBoxLayout()
-        self._content_layout.setContentsMargins(0, 0, 0, 0)
-        self._content_layout.setSpacing(12)
-        self._content_layout.addWidget(self._indicator)
-        self._content_layout.addWidget(self._waveform)
-        self._content_layout.addWidget(self._text_label)
-        self._content_layout.addStretch()
-
-        main_layout = QHBoxLayout(self)
-        main_layout.setContentsMargins(16, 12, 16, 12)
-        main_layout.addLayout(self._content_layout)
+        # 布局: 上方光晕，下方文字
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(6, 6, 6, 6)
+        main_layout.setSpacing(4)
+        main_layout.addWidget(self._glow)
+        main_layout.addWidget(self._text_label)
 
         # 动画
         self._size_animation = QPropertyAnimation(self, b"geometry")
-        self._size_animation.setDuration(300)  # 300ms 过渡
+        self._size_animation.setDuration(300)
         self._size_animation.setEasingCurve(QEasingCurve.OutCubic)
 
-        # 初始化为最小尺寸（只显示绿色圆球），先设尺寸再定位
-        self.resize(56, 48)
+        # 初始尺寸 - 待机时显示旋转圆环
+        self.resize(48, 48)
         self._center_on_screen()
-
-    def _set_idle_size(self):
-        """待机状态：只显示绿色圆球"""
-        self._animate_to_size(56, 48)
-
-    def _set_recording_size(self):
-        """录音状态：红色圆球 + 波形"""
-        self._animate_to_size(100, 48)
-
-    # 圆点中心距窗口左边缘的固定偏移（16 margin + 24/2 indicator）
-    DOT_CENTER_X = 28
+        self._idle = True
 
     def _animate_to_size(self, width: int, height: int):
-        """平滑过渡到新尺寸，以红/绿圆点中心为锚点，圆点屏幕位置保持不变"""
+        """以中心为锚点平滑过渡到新尺寸"""
         current_rect = self.geometry()
-
-        dot_x = current_rect.x() + self.DOT_CENTER_X
-        dot_y = current_rect.y() + current_rect.height() // 2
-
-        x = dot_x - self.DOT_CENTER_X
-        y = dot_y - height // 2
-
+        cx = current_rect.x() + current_rect.width() // 2
+        cy = current_rect.y() + current_rect.height() // 2
+        x = cx - width // 2
+        y = cy - height // 2
         end_rect = QRect(x, y, width, height)
         self._size_animation.setStartValue(current_rect)
         self._size_animation.setEndValue(end_rect)
         self._size_animation.start()
 
     def _center_on_screen(self):
-        """以圆点为中心定位到屏幕底部"""
         screen = QApplication.primaryScreen().availableGeometry()
-        x = screen.width() // 2 - self.DOT_CENTER_X
-        y = screen.bottom() - self.height() - 60
+        x = (screen.width() - self.width()) // 2
+        y = screen.bottom() - self.height() - 80
         self.move(x, y)
 
     def paintEvent(self, event):
-        """绘制半透明圆角背景"""
+        """待机时画圆形区域，录音/显示文字时画圆角矩形背景"""
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        painter.setBrush(QBrush(QColor(20, 20, 20, 230)))
         painter.setPen(Qt.NoPen)
-        painter.drawRoundedRect(self.rect(), 24, 24)
+        if self._idle:
+            # 圆形背景
+            painter.setBrush(QBrush(QColor(15, 15, 15, 200)))
+            cx = self.width() / 2
+            cy = self.height() / 2
+            r = min(self.width(), self.height()) / 2
+            painter.drawEllipse(QPointF(cx, cy), r, r)
+        else:
+            painter.setBrush(QBrush(QColor(15, 15, 15, 220)))
+            painter.drawRoundedRect(self.rect(), 24, 24)
 
     def start_recording(self):
-        """开始录音：圆球变红 + 窗口扩展开启动画 + 波形渐现"""
-        self._indicator.set_recording(True)
+        """开始录音：展开浮窗，启动 Siri 光晕动画"""
+        self._idle = False
         self._text_received = False
         self._text_label.hide()
-        self._set_recording_size()
-        QTimer.singleShot(80, self._show_waveform)
-
-    def _show_waveform(self):
-        """延迟显示波形，与窗口扩展动画同步"""
-        self._waveform.start()
-        self._waveform.show()
+        self._text_label.setText("")
+        self._glow.show()
+        self._glow.start()
+        self._animate_to_size(240, 64)
+        self.update()
 
     def stop_recording(self):
-        """停止录音：圆球变绿 + 隐藏波形"""
-        self._indicator.set_recording(False)
-        self._waveform.stop()
+        """停止录音：光晕渐隐"""
+        self._glow.stop()
 
     MAX_LABEL_WIDTH = 600
 
-    def _calc_label_geometry(self, text: str):
-        """根据文字计算 label 宽度和对齐方式。
-        短文本：左对齐，label 自适应宽度。
-        超长文本：右对齐，label 固定最大宽度，显示文字尾部。"""
-        fm = QFontMetrics(self._text_label.font())
-        text_width = fm.horizontalAdvance(text) + 10
-
-        if text_width <= self.MAX_LABEL_WIDTH:
-            self._text_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-            self._text_label.setMinimumWidth(0)
-            self._text_label.setMaximumWidth(self.MAX_LABEL_WIDTH)
-            return text_width, 48
-        else:
-            self._text_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-            self._text_label.setMinimumWidth(self.MAX_LABEL_WIDTH)
-            self._text_label.setMaximumWidth(self.MAX_LABEL_WIDTH)
-            return self.MAX_LABEL_WIDTH, 48
-
     def update_text(self, text: str):
-        """实时更新文字（录音时），首次收到文字后隐藏波形"""
+        """实时更新文字"""
         if not text:
             return
 
-        # 首次收到识别文字 → 隐藏波形，只显示文字
         if not self._text_received:
             self._text_received = True
-            self._waveform.stop()
-            self._waveform.hide()
+            self._glow.stop()
 
         self._text_label.setText(text)
         self._text_label.show()
 
-        label_width, height = self._calc_label_geometry(text)
-        width = 24 + 12 + label_width + 32
-        self._animate_to_size(width, height)
+        fm = QFontMetrics(self._text_label.font())
+        text_width = min(fm.horizontalAdvance(text) + 40, self.MAX_LABEL_WIDTH)
+        width = max(240, text_width + 32)
+
+        if text_width >= self.MAX_LABEL_WIDTH:
+            self._text_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            self._text_label.setMaximumWidth(self.MAX_LABEL_WIDTH)
+        else:
+            self._text_label.setAlignment(Qt.AlignCenter)
+            self._text_label.setMaximumWidth(self.MAX_LABEL_WIDTH)
+
+        self._animate_to_size(width, 80)
 
     def set_text(self, text: str):
-        """设置最终文字（录音结束后），隐藏波形"""
+        """设置最终文字"""
         if not text:
             return
-
-        self._waveform.hide()
+        self._glow.hide_animation()
         self._text_label.setText(text)
         self._text_label.show()
 
-        label_width, height = self._calc_label_geometry(text)
-        width = 24 + 12 + label_width + 32
-        self._animate_to_size(width, height)
+        fm = QFontMetrics(self._text_label.font())
+        text_width = min(fm.horizontalAdvance(text) + 40, self.MAX_LABEL_WIDTH)
+        width = max(240, text_width + 32)
+        self._animate_to_size(width, 80)
 
     def reset(self):
-        """重置到待机状态"""
-        self._indicator.set_recording(False)
-        self._waveform.stop()
+        """重置到待机状态：旋转圆环"""
+        self._idle = True
+        self._glow.stop()  # 切回 idle 模式（旋转）
+        self._glow.show()
         self._text_label.hide()
         self._text_label.setText("")
-        self._set_idle_size()
+        self._animate_to_size(48, 48)
+        self.update()
 
     def mousePressEvent(self, event):
-        """鼠标按下：记录拖拽起始位置"""
         if event.button() == Qt.LeftButton:
             self._dragging = True
             self._drag_position = event.globalPos() - self.frameGeometry().topLeft()
             event.accept()
 
     def mouseMoveEvent(self, event):
-        """鼠标移动：拖拽窗口"""
         if self._dragging and event.buttons() == Qt.LeftButton:
             self.move(event.globalPos() - self._drag_position)
             event.accept()
 
     def mouseReleaseEvent(self, event):
-        """鼠标释放：结束拖拽"""
         if event.button() == Qt.LeftButton:
             self._dragging = False
             event.accept()
