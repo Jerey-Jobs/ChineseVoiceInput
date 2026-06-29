@@ -555,6 +555,11 @@ def main():
     signal.signal(signal.SIGINT, _force_quit)
     signal.signal(signal.SIGTERM, _force_quit)
 
+    # 定时器让 Python 有机会处理信号（Qt 事件循环会阻塞信号处理）
+    timer = QTimer()
+    timer.timeout.connect(lambda: None)
+    timer.start(200)
+
     voice_app = VoiceTypingApp()
     voice_app.run()
 
