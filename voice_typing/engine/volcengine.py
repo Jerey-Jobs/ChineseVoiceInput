@@ -88,16 +88,18 @@ class VolcengineEngine(BaseEngine):
 
     async def _ws_session(self):
         headers = {
-            "X-Api-App-Key": self._app_id,
-            "X-Api-Access-Key": self._access_token,
+            "Authorization": f"Bearer {self._access_token}",
             "X-Api-Resource-Id": RESOURCE_ID,
             "X-Api-Request-Id": str(uuid.uuid4()),
             "X-Api-Connect-Id": str(uuid.uuid4()),
         }
+        print(f"[Volcengine] 连接: {WS_URL}")
+        print(f"[Volcengine] Authorization: Bearer;{self._access_token[:8]}...")
+        print(f"[Volcengine] Resource-Id: {RESOURCE_ID}")
         try:
             async with websockets.connect(
                 WS_URL,
-                additional_headers=headers,
+                extra_headers=headers,
                 max_size=10_000_000,
                 ping_interval=20,
             ) as ws:
