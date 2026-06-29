@@ -137,6 +137,10 @@ class VoiceTypingApp(QObject):
         prompt = self._POLISH.get(strength, self._POLISH["medium"])
         prompt += self._build_vocabulary_hint()
 
+        custom_style = self._config.get("custom_style_prompt", "")
+        if custom_style:
+            prompt += f"\n\n## 输出风格要求\n{custom_style}"
+
         # 润色路由：DeepSeek > 豆包 > 阿里云 Qwen
         polished = self._call_llm_deepseek_stream(prompt, raw_text)
         if polished is None:
@@ -542,7 +546,14 @@ def main():
     app.setStyleSheet(DARK_STYLE + OVERLAY_STYLE)
 
     import signal
-    signal.signal(signal.SIGINT, lambda sig, frame: app.quit())
+    import os
+
+    def _force_quit(sig, frame):
+        app.quit()
+        os._exit(0)
+
+    signal.signal(signal.SIGINT, _force_quit)
+    signal.signal(signal.SIGTERM, _force_quit)
 
     voice_app = VoiceTypingApp()
     voice_app.run()

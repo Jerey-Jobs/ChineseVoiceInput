@@ -706,6 +706,9 @@ class SettingsWindow(QWidget):
             "输入阿里云 DashScope API Key", self._api_status
         )
         alibaba_api_layout.addWidget(self._api_wrapper)
+        alibaba_link = QLabel('<a href="https://dashscope.console.aliyun.com/" style="color: #22c55e;">前往阿里云 DashScope 控制台获取 API Key</a>')
+        alibaba_link.setOpenExternalLinks(True)
+        alibaba_api_layout.addWidget(alibaba_link)
         alayout.addWidget(self._alibaba_api_widget)
 
         # 火山引擎
@@ -717,6 +720,10 @@ class SettingsWindow(QWidget):
         volc_asr_label = QLabel("语音识别 (ASR)")
         volc_asr_label.setObjectName("subtitle")
         volc_layout.addWidget(volc_asr_label)
+
+        volc_link = QLabel('<a href="https://console.volcengine.com/ark/" style="color: #22c55e;">前往火山引擎 ARK 控制台获取凭证</a>')
+        volc_link.setOpenExternalLinks(True)
+        volc_layout.addWidget(volc_link)
 
         app_id_wrapper, self._volc_app_id_input = self._make_password_input("App ID（X-Api-App-Key）")
         volc_layout.addWidget(app_id_wrapper)
@@ -787,6 +794,18 @@ class SettingsWindow(QWidget):
         playout.addWidget(polish_hint)
         layout.addWidget(polish_card)
 
+        # 自定义语音风格
+        style_card = QGroupBox("自定义语音风格")
+        style_layout = QVBoxLayout(style_card)
+        style_hint = QLabel("输入你希望的输出风格，会追加到润色提示词中（如：用简洁专业的技术文档风格）")
+        style_hint.setObjectName("subtitle")
+        style_hint.setWordWrap(True)
+        style_layout.addWidget(style_hint)
+        self._custom_style_input = QLineEdit()
+        self._custom_style_input.setPlaceholderText("例如：用简洁专业的技术文档风格，避免口语化表达")
+        style_layout.addWidget(self._custom_style_input)
+        layout.addWidget(style_card)
+
         # 开机启动
         autostart_card = QGroupBox("开机启动")
         alayout_auto = QVBoxLayout(autostart_card)
@@ -810,6 +829,14 @@ class SettingsWindow(QWidget):
         self._apply_btn.setMinimumWidth(100)
         self._apply_btn.clicked.connect(self._on_apply)
         btn_row.addWidget(self._apply_btn)
+
+        btn_row.addStretch()
+        self._quit_btn = QPushButton("退出程序")
+        self._quit_btn.setMinimumWidth(100)
+        self._quit_btn.setStyleSheet("QPushButton { background: #c0392b; color: white; }")
+        self._quit_btn.clicked.connect(self._quit_app)
+        btn_row.addWidget(self._quit_btn)
+
         layout.addLayout(btn_row)
 
         scroll.setWidget(content)
@@ -829,13 +856,17 @@ class SettingsWindow(QWidget):
         self._tray.setToolTip("VoiceType — 语音输入")
 
         menu = QMenu()
-        show_action = QAction("显示主窗口", self)
-        show_action.triggered.connect(self._show_window)
-        menu.addAction(show_action)
+        show_action = menu.addAction("显示主窗口")
         menu.addSeparator()
-        quit_action = QAction("退出", self)
-        quit_action.triggered.connect(self._quit_app)
-        menu.addAction(quit_action)
+        quit_action = menu.addAction("退出 VoiceType")
+
+        def _on_menu_triggered(action):
+            if action == quit_action:
+                self._quit_app()
+            elif action == show_action:
+                self._show_window()
+
+        menu.triggered.connect(_on_menu_triggered)
 
         self._tray.setContextMenu(menu)
         self._tray.activated.connect(self._on_tray_activated)
@@ -932,6 +963,8 @@ class SettingsWindow(QWidget):
         self._doubao_endpoint_input.setText(self._config.get("doubao_endpoint_id", ""))
         self._deepseek_api_key_input.setText(self._config.get("deepseek_api_key", ""))
 
+        self._custom_style_input.setText(self._config.get("custom_style_prompt", ""))
+
         self._refresh_dict_list()
 
     # ---------- 事件处理 ----------
@@ -966,6 +999,8 @@ class SettingsWindow(QWidget):
         self._config["doubao_api_key"] = self._doubao_api_key_input.text()
         self._config["doubao_endpoint_id"] = self._doubao_endpoint_input.text()
         self._config["deepseek_api_key"] = self._deepseek_api_key_input.text()
+
+        self._config["custom_style_prompt"] = self._custom_style_input.text().strip()
 
         if self._new_hotkey_keys is not None:
             self._config["hotkey"] = self._new_hotkey_keys
@@ -1092,16 +1127,22 @@ X-GNOME-Autostart-enabled=true
                 os.remove(self.AUTOSTART_FILE)
 
     def _quit_app(self):
-        self._hotkey.stop()
+        # DEBUG: 确认退出方法被调用
+        with open('/tmp/voice_quit_debug.txt', 'w') as f:
+            f.write('quit called')
+        import os, signal
         self._tray.hide()
-        QApplication.quit()
+        try:
+            self._hotkey.stop()
+        except Exception:
+            pass
+        os.kill(os.getpid(), signal.SIGKILL)
 
     def closeEvent(self, event):
+        # 按住 Shift 点关闭 = 真正退出
+        from PyQt5.QtWidgets import QApplication as _QApp
+        if _QApp.keyboardModifiers() & Qt.ShiftModifier:
+            self._quit_app()
+            return
         event.ignore()
         self.hide()
-        self._tray.showMessage(
-            "VoiceType",
-            "已最小化到系统托盘，快捷键仍然可用",
-            QSystemTrayIcon.Information,
-            2000,
-        )
