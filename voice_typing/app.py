@@ -73,6 +73,8 @@ class VoiceTypingApp(QObject):
                 app_id=self._config.get("volc_asr_app_id", ""),
                 access_token=self._config.get("volc_asr_access_token", ""),
                 hotwords=hotwords,
+                resource_id=self._config.get("volc_resource_id", ""),
+                api_key=self._config.get("volc_api_key", ""),
             )
         else:
             self._engine = AlibabaEngine(
@@ -90,6 +92,8 @@ class VoiceTypingApp(QObject):
     def _on_recording_stop_callback(self):
         self.recording_stop_signal.emit()
 
+    MAX_RECORDING_SEC = 20  # 录音最长时间（秒），避免过度消耗
+
     @pyqtSlot()
     def _on_recording_start_main_thread(self):
         import time
@@ -98,9 +102,22 @@ class VoiceTypingApp(QObject):
         self._recorder = Recorder(self._engine, app_obj=self)
         self._recorder.text_update.connect(self._overlay.update_text)
         self._recorder.start()
+        # 超时自动停止
+        self._recording_timeout = QTimer()
+        self._recording_timeout.setSingleShot(True)
+        self._recording_timeout.timeout.connect(self._on_recording_timeout)
+        self._recording_timeout.start(self.MAX_RECORDING_SEC * 1000)
+
+    def _on_recording_timeout(self):
+        """录音超过最大时长，自动停止"""
+        print(f"[录音] 超过 {self.MAX_RECORDING_SEC}s，自动停止")
+        if self._recorder:
+            self._recorder.stop()
 
     @pyqtSlot()
     def _on_recording_stop_main_thread(self):
+        if hasattr(self, '_recording_timeout') and self._recording_timeout:
+            self._recording_timeout.stop()
         if self._recorder:
             self._recorder.stop()
 
