@@ -77,6 +77,9 @@ class AlibabaEngine(BaseEngine):
         self._queue = queue.Queue()
         self._running = True
 
+        print(f"[ASR] 引擎: 阿里云 Paraformer-realtime-v2")
+        print(f"[ASR] API: DashScope SDK (wss://dashscope.aliyuncs.com)")
+
         self._recognition = Recognition(
             model="paraformer-realtime-v2",
             format="pcm",
