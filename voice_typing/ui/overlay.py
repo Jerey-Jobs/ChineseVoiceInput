@@ -230,14 +230,23 @@ class OverlayWindow(QWidget):
         painter.setRenderHint(QPainter.Antialiasing)
         painter.setPen(Qt.NoPen)
         if self._idle:
-            # 深色彩色圆形背景
             cx = self.width() / 2
             cy = self.height() / 2
             r = min(self.width(), self.height()) / 2
-            bg = QRadialGradient(cx, cy, r)
-            bg.setColorAt(0, QColor(30, 20, 50, 220))
-            bg.setColorAt(1, QColor(10, 10, 20, 240))
-            painter.setBrush(QBrush(bg))
+            ai_on = getattr(self, '_ai_enabled', True)
+            if ai_on:
+                # AI 开启：渐变彩色背景
+                bg = QRadialGradient(cx, cy, r)
+                bg.setColorAt(0, QColor(60, 20, 120, 220))
+                bg.setColorAt(0.6, QColor(30, 60, 150, 200))
+                bg.setColorAt(1, QColor(10, 20, 60, 240))
+                painter.setBrush(QBrush(bg))
+            else:
+                # AI 关闭：纯深灰色
+                bg = QRadialGradient(cx, cy, r)
+                bg.setColorAt(0, QColor(40, 40, 40, 220))
+                bg.setColorAt(1, QColor(20, 20, 20, 240))
+                painter.setBrush(QBrush(bg))
             painter.drawEllipse(QPointF(cx, cy), r, r)
         else:
             painter.setBrush(QBrush(QColor(15, 15, 15, 220)))
@@ -348,29 +357,56 @@ class OverlayWindow(QWidget):
         else:
             self._ai_btn.hide()
 
+    def _toggle_ai(self):
+        """切换 AI 润色开关"""
+        self._ai_enabled = not getattr(self, '_ai_enabled', True)
+        if self._ai_enabled:
+            self._glow.start()
+        else:
+            self._glow.stop()
+        self.update()  # 重绘背景
+        if hasattr(self, '_on_ai_toggle') and self._on_ai_toggle:
+            self._on_ai_toggle(self._ai_enabled)
+
+    def set_ai_toggle_callback(self, callback):
+        self._on_ai_toggle = callback
+
+    def set_ai_enabled(self, enabled):
+        self._ai_enabled = enabled
+
     def reset(self):
-        """重置到待机状态：旋转圆环"""
+        """重置到待机状态：根据 AI 开关恢复对应效果"""
         self._idle = True
-        self._glow.stop()
+        if getattr(self, '_ai_enabled', True):
+            self._glow.start()
+        else:
+            self._glow.stop()
         self._glow.show()
-        self._ai_btn.show()
         self._text_label.hide()
         self._text_label.setText("")
-        self._animate_to_size(64, 64)
+        self._animate_to_size(58, 58)
         self.update()
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
-            self._dragging = True
+            self._dragging = False
+            self._did_drag = False
             self._drag_position = event.globalPos() - self.frameGeometry().topLeft()
             event.accept()
 
     def mouseMoveEvent(self, event):
-        if self._dragging and event.buttons() == Qt.LeftButton:
-            self.move(event.globalPos() - self._drag_position)
+        if event.buttons() == Qt.LeftButton:
+            delta = (event.globalPos() - self._drag_position - self.frameGeometry().topLeft()).manhattanLength()
+            if not self._did_drag and delta > 5:
+                self._did_drag = True
+            if self._did_drag:
+                self.move(event.globalPos() - self._drag_position)
             event.accept()
 
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.LeftButton:
-            self._dragging = False
+            if not self._did_drag and self._idle:
+                # 单击（非拖拽）且在待机状态 → 切换 AI
+                self._toggle_ai()
+            self._did_drag = False
             event.accept()
