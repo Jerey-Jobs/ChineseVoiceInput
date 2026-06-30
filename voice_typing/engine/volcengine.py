@@ -58,9 +58,10 @@ class VolcengineEngine(BaseEngine):
 
     name = "火山引擎 BigModel ASR"
 
-    def __init__(self, app_id: str = "", access_token: str = ""):
+    def __init__(self, app_id: str = "", access_token: str = "", hotwords: list = None):
         self._app_id = app_id
         self._access_token = access_token
+        self._hotwords = hotwords or []
         self._running = False
         self._audio_queue = None
         self._text_callback = None
@@ -88,14 +89,15 @@ class VolcengineEngine(BaseEngine):
 
     async def _ws_session(self):
         headers = {
-            "Authorization": f"Bearer {self._access_token}",
+            "X-Api-App-Key": self._app_id,
+            "X-Api-Access-Key": self._access_token,
             "X-Api-Resource-Id": RESOURCE_ID,
             "X-Api-Request-Id": str(uuid.uuid4()),
-            "X-Api-Connect-Id": str(uuid.uuid4()),
         }
         print(f"[Volcengine] 连接: {WS_URL}")
-        print(f"[Volcengine] Authorization: Bearer;{self._access_token[:8]}...")
-        print(f"[Volcengine] Resource-Id: {RESOURCE_ID}")
+        print(f"[Volcengine] X-Api-App-Key: {self._app_id}")
+        print(f"[Volcengine] X-Api-Access-Key: {self._access_token[:8]}...({len(self._access_token)})")
+        print(f"[Volcengine] X-Api-Resource-Id: {RESOURCE_ID}")
         try:
             async with websockets.connect(
                 WS_URL,
@@ -117,6 +119,8 @@ class VolcengineEngine(BaseEngine):
                         "language": "zh-CN",
                     },
                 }
+                if self._hotwords:
+                    config["request"]["hotwords"] = self._hotwords
                 payload = json.dumps(config).encode()
                 await ws.send(_build_frame(HDR_CONFIG, payload))
 

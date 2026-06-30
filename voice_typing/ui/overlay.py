@@ -87,27 +87,36 @@ class SiriGlowWidget(QWidget):
         t = self._phase - int(self._phase)
         c1 = self._colors[idx1]
         c2 = self._colors[idx2]
-        bg_gradient = QRadialGradient(cx, cy, 20)
-        gc1 = QColor(c1.red(), c1.green(), c1.blue(), 60)
-        gc2 = QColor(c2.red(), c2.green(), c2.blue(), 30)
+        bg_gradient = QRadialGradient(cx, cy, 28)
+        gc1 = QColor(c1.red(), c1.green(), c1.blue(), 140)
+        gc2 = QColor(c2.red(), c2.green(), c2.blue(), 70)
         bg_gradient.setColorAt(0, gc1)
-        bg_gradient.setColorAt(0.7, gc2)
+        bg_gradient.setColorAt(0.6, gc2)
         bg_gradient.setColorAt(1, QColor(0, 0, 0, 0))
         painter.setPen(Qt.NoPen)
         painter.setBrush(QBrush(bg_gradient))
-        painter.drawEllipse(QPointF(cx, cy), 20, 20)
+        painter.drawEllipse(QPointF(cx, cy), 28, 28)
 
-        # 旋转圆点
+        # 旋转圆点 + 拖尾光晕
         for i, color in enumerate(self._colors):
             angle = self._phase * 3 + i * (2 * math.pi / n)
             x = cx + radius * math.cos(angle)
             y = cy + radius * math.sin(angle)
-            alpha = 255 - i * 30
-            c = QColor(color)
-            c.setAlpha(max(alpha, 80))
+            # 光晕
+            glow = QRadialGradient(x, y, 6)
+            gc = QColor(color)
+            gc.setAlpha(120)
+            glow.setColorAt(0, gc)
+            glow.setColorAt(1, QColor(color.red(), color.green(), color.blue(), 0))
             painter.setPen(Qt.NoPen)
+            painter.setBrush(QBrush(glow))
+            painter.drawEllipse(QPointF(x, y), 6, 6)
+            # 实心圆点
+            alpha = 255 - i * 25
+            c = QColor(color)
+            c.setAlpha(max(alpha, 100))
             painter.setBrush(QBrush(c))
-            r = dot_radius * (1.0 - i * 0.08)
+            r = 4.0 - i * 0.3
             painter.drawEllipse(QPointF(x, y), r, r)
 
     def _draw_waves(self, painter, w, h, cx, cy):
@@ -185,7 +194,7 @@ class OverlayWindow(QWidget):
         self._size_animation.setEasingCurve(QEasingCurve.OutCubic)
 
         # 初始尺寸 - 待机时显示旋转圆环
-        self.resize(48, 48)
+        self.resize(64, 64)
         self._center_on_screen()
         self._idle = True
 
@@ -208,16 +217,19 @@ class OverlayWindow(QWidget):
         self.move(x, y)
 
     def paintEvent(self, event):
-        """待机时画圆形区域，录音/显示文字时画圆角矩形背景"""
+        """待机时画彩色圆形区域，录音时画圆角矩形背景"""
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         painter.setPen(Qt.NoPen)
         if self._idle:
-            # 圆形背景
-            painter.setBrush(QBrush(QColor(15, 15, 15, 200)))
+            # 深色彩色圆形背景
             cx = self.width() / 2
             cy = self.height() / 2
             r = min(self.width(), self.height()) / 2
+            bg = QRadialGradient(cx, cy, r)
+            bg.setColorAt(0, QColor(30, 20, 50, 220))
+            bg.setColorAt(1, QColor(10, 10, 20, 240))
+            painter.setBrush(QBrush(bg))
             painter.drawEllipse(QPointF(cx, cy), r, r)
         else:
             painter.setBrush(QBrush(QColor(15, 15, 15, 220)))
@@ -285,7 +297,7 @@ class OverlayWindow(QWidget):
         self._glow.show()
         self._text_label.hide()
         self._text_label.setText("")
-        self._animate_to_size(48, 48)
+        self._animate_to_size(64, 64)
         self.update()
 
     def mousePressEvent(self, event):

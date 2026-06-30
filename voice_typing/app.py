@@ -67,9 +67,12 @@ class VoiceTypingApp(QObject):
                 phrase_id=self._config.get("phrase_id", ""),
             )
         elif engine_type == "volcengine":
+            vocab = self._config.get("custom_vocabulary", [])
+            hotwords = [v["term"] for v in vocab if v.get("term")]
             self._engine = VolcengineEngine(
                 app_id=self._config.get("volc_asr_app_id", ""),
                 access_token=self._config.get("volc_asr_access_token", ""),
+                hotwords=hotwords,
             )
         else:
             self._engine = AlibabaEngine(
@@ -136,6 +139,11 @@ class VoiceTypingApp(QObject):
             self.polish_done.emit(self._apply_alias_map(raw_text))
             return
 
+        polish_model = self._config.get("polish_model", "qwen")
+        if polish_model == "off":
+            self.polish_done.emit(self._apply_alias_map(raw_text))
+            return
+
         strength = self._config.get("polish_strength", "medium")
         prompt = self._POLISH.get(strength, self._POLISH["medium"])
         prompt += self._build_vocabulary_hint()
@@ -144,17 +152,23 @@ class VoiceTypingApp(QObject):
         if custom_style:
             prompt += f"\n\n## 输出风格要求\n{custom_style}"
 
-        # 润色路由：DeepSeek > 豆包 > 阿里云 Qwen
-        print(f"[润色] 强度: {strength}")
+        # 润色路由：根据配置选择模型
+        print(f"[润色] 强度: {strength}, 模型: {polish_model}")
         print(f"[润色] 原文: {raw_text}")
-        print(f"[润色] System Prompt:\n{prompt[:200]}...")
-        polished = self._call_llm_deepseek_stream(prompt, raw_text)
-        if polished is None:
-            engine = self._config.get("engine", "alibaba")
-            if engine == "volcengine":
-                polished = self._call_llm_doubao_stream(prompt, raw_text)
-            else:
-                polished = self._call_llm_qwen(prompt, raw_text)
+
+        polished = None
+        if polish_model == "deepseek":
+            polished = self._call_llm_deepseek_stream(prompt, raw_text)
+        elif polish_model == "doubao":
+            polished = self._call_llm_doubao_stream(prompt, raw_text)
+        elif polish_model == "qwen":
+            polished = self._call_llm_qwen(prompt, raw_text)
+
+        # fallback: 如果选中的模型失败，尝试其他
+        if polished is None and polish_model != "qwen":
+            polished = self._call_llm_qwen(prompt, raw_text)
+        if polished is None and polish_model != "doubao":
+            polished = self._call_llm_doubao_stream(prompt, raw_text)
 
         if polished is None:
             polished = raw_text
@@ -185,8 +199,10 @@ class VoiceTypingApp(QObject):
             )
             if response.status_code == 200:
                 return response.output.choices[0].message.content.strip()
+            print(f"[Polish] Qwen返回异常状态: {response.status_code} {response.message}")
             return None
-        except Exception:
+        except Exception as e:
+            print(f"[Polish] Qwen润色异常: {e}")
             return None
 
     def _call_llm_deepseek_stream(self, system_prompt, user_text):

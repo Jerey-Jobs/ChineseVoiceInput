@@ -666,17 +666,21 @@ class SettingsWindow(QWidget):
 
     def _sync_hotwords(self):
         """手动同步热词到阿里云"""
+        print("[热词] 同步按钮被点击")
         api_key = self._config.get("alibaba_api_key", "")
         if not api_key:
+            print("[热词] 无 API Key")
             self._dict_status.setText("请先配置阿里云 API Key")
             QTimer.singleShot(3000, lambda: self._dict_status.setText(""))
             return
         vocab = self._config.get("custom_vocabulary", [])
         hotwords = [v["term"] for v in vocab if v.get("term")]
         if not hotwords:
+            print("[热词] 词库为空")
             self._dict_status.setText("词库为空")
             QTimer.singleShot(2000, lambda: self._dict_status.setText(""))
             return
+        print(f"[热词] 开始同步 {len(hotwords)} 个热词...")
         self._dict_status.setText("正在同步热词...")
         QApplication.processEvents()
         phrase_id = sync_vocabulary(
@@ -687,8 +691,10 @@ class SettingsWindow(QWidget):
         if phrase_id:
             self._config["phrase_id"] = phrase_id
             save_config(self._config)
+            print(f"[热词] 同步成功! phrase_id={phrase_id}")
             self._dict_status.setText(f"同步成功！{len(hotwords)} 个热词")
         else:
+            print("[热词] 同步失败")
             self._dict_status.setText("同步失败")
         QTimer.singleShot(3000, lambda: self._dict_status.setText(""))
 
@@ -823,12 +829,74 @@ class SettingsWindow(QWidget):
 
         layout.addWidget(hotkey_card)
 
-        # 通用文本润色（独立于 ASR 引擎，DeepSeek 优先）
+        # 文本润色模型（独立配置，可选择）
         polish_llm_card = QGroupBox("文本润色模型")
         polish_llm_layout = QVBoxLayout(polish_llm_card)
-        deepseek_wrapper, self._deepseek_api_key_input = self._make_password_input("DeepSeek API Key（优先使用）")
-        polish_llm_layout.addWidget(deepseek_wrapper)
-        polish_llm_hint = QLabel("填了 DeepSeek Key 就用 DeepSeek 润色，不填则用引擎自带润色（豆包/阿里 Qwen）")
+
+        # 模型选择按钮
+        polish_model_row = QHBoxLayout()
+        polish_model_label = QLabel("润色引擎：")
+        polish_model_row.addWidget(polish_model_label)
+        self._polish_model_btns = {}
+        current_polish = self._config.get("polish_model", "qwen")
+        polish_btn_css = """
+            QPushButton { padding: 6px 12px; border-radius: 8px; border: 1px solid #333; }
+            QPushButton:checked { background: #2563eb; color: white; border: 1px solid #2563eb; }
+        """
+        for model_id, model_name in [("off", "关闭"), ("qwen", "阿里 Qwen"), ("doubao", "豆包"), ("deepseek", "DeepSeek")]:
+            btn = QPushButton(model_name)
+            btn.setCheckable(True)
+            btn.setChecked(model_id == current_polish)
+            btn.setStyleSheet(polish_btn_css)
+            btn.clicked.connect(lambda checked, m=model_id: self._set_polish_model(m))
+            self._polish_model_btns[model_id] = btn
+            polish_model_row.addWidget(btn)
+        polish_model_row.addStretch()
+        polish_llm_layout.addLayout(polish_model_row)
+
+        # 各模型的配置区域（根据选择动态显示）
+        from PyQt5.QtWidgets import QStackedWidget
+
+        self._polish_config_stack = QStackedWidget()
+
+        # 关闭润色（无配置）
+        off_widget = QLabel("润色已关闭，语音识别结果将直接输出")
+        off_widget.setObjectName("subtitle")
+        off_widget.setWordWrap(True)
+        self._polish_config_stack.addWidget(off_widget)  # index 0
+
+        # Qwen 配置
+        qwen_widget = QLabel("使用上方阿里云 API Key 进行润色（无需额外配置）")
+        qwen_widget.setObjectName("subtitle")
+        qwen_widget.setWordWrap(True)
+        self._polish_config_stack.addWidget(qwen_widget)  # index 1
+
+        # 豆包配置
+        from PyQt5.QtWidgets import QWidget as _QW
+        doubao_widget = _QW()
+        doubao_layout = QVBoxLayout(doubao_widget)
+        doubao_layout.setContentsMargins(0, 0, 0, 0)
+        doubao_key_wrapper, self._polish_doubao_key_input = self._make_password_input("豆包 API Key")
+        doubao_layout.addWidget(doubao_key_wrapper)
+        self._polish_doubao_endpoint_input = QLineEdit()
+        self._polish_doubao_endpoint_input.setPlaceholderText("豆包 Endpoint ID（如 ep-xxx）")
+        doubao_layout.addWidget(self._polish_doubao_endpoint_input)
+        self._polish_config_stack.addWidget(doubao_widget)  # index 1
+
+        # DeepSeek 配置
+        deepseek_widget = _QW()
+        deepseek_layout = QVBoxLayout(deepseek_widget)
+        deepseek_layout.setContentsMargins(0, 0, 0, 0)
+        deepseek_wrapper, self._deepseek_api_key_input = self._make_password_input("DeepSeek API Key")
+        deepseek_layout.addWidget(deepseek_wrapper)
+        self._polish_config_stack.addWidget(deepseek_widget)  # index 2
+
+        # 设置当前显示
+        model_index = {"off": 0, "qwen": 1, "doubao": 2, "deepseek": 3}
+        self._polish_config_stack.setCurrentIndex(model_index.get(current_polish, 1))
+        polish_llm_layout.addWidget(self._polish_config_stack)
+
+        polish_llm_hint = QLabel("选择用哪个模型来润色语音转写结果")
         polish_llm_hint.setObjectName("subtitle")
         polish_llm_layout.addWidget(polish_llm_hint)
         layout.addWidget(polish_llm_card)
@@ -853,15 +921,53 @@ class SettingsWindow(QWidget):
         playout.addWidget(polish_hint)
         layout.addWidget(polish_card)
 
-        # 自定义语音风格
+        # 自定义语音风格（多模式）
         style_card = QGroupBox("自定义语音风格")
         style_layout = QVBoxLayout(style_card)
-        style_hint = QLabel("输入你希望的输出风格，会追加到润色提示词中（如：用简洁专业的技术文档风格）")
+        style_hint = QLabel("选择或自定义润色模式，每个模式可配置独立的提示词")
         style_hint.setObjectName("subtitle")
         style_hint.setWordWrap(True)
         style_layout.addWidget(style_hint)
-        self._custom_style_input = QLineEdit()
-        self._custom_style_input.setPlaceholderText("例如：用简洁专业的技术文档风格，避免口语化表达")
+
+        # 模式切换按钮行
+        style_mode_row = QHBoxLayout()
+        self._style_modes = self._config.get("style_modes", {
+            "日常": "如果有明显的逻辑异常，可以优化下语句变成通顺的语句",
+            "专业": "",
+        })
+        # 确保配置中有
+        if "style_modes" not in self._config:
+            self._config["style_modes"] = self._style_modes
+        self._style_mode_btns = {}
+        current_style_mode = self._config.get("current_style_mode", "日常")
+        style_btn_css = """
+            QPushButton { padding: 6px 14px; border-radius: 8px; border: 1px solid #333; }
+            QPushButton:checked { background: #2563eb; color: white; border: 1px solid #2563eb; }
+        """
+        for mode_name in self._style_modes:
+            btn = QPushButton(mode_name)
+            btn.setCheckable(True)
+            btn.setChecked(mode_name == current_style_mode)
+            btn.setStyleSheet(style_btn_css)
+            btn.clicked.connect(lambda checked, m=mode_name: self._switch_style_mode(m))
+            self._style_mode_btns[mode_name] = btn
+            style_mode_row.addWidget(btn)
+
+        # 添加新模式按钮
+        add_mode_btn = QPushButton("+")
+        add_mode_btn.setFixedWidth(36)
+        add_mode_btn.clicked.connect(self._add_style_mode)
+        style_mode_row.addWidget(add_mode_btn)
+        style_mode_row.addStretch()
+        style_layout.addLayout(style_mode_row)
+
+        # 多行文本框
+        from PyQt5.QtWidgets import QTextEdit
+        self._custom_style_input = QTextEdit()
+        self._custom_style_input.setPlaceholderText("输入该模式的润色提示词（如：用简洁专业的技术文档风格）")
+        self._custom_style_input.setMaximumHeight(100)
+        self._custom_style_input.setStyleSheet("QTextEdit { background: #1a1a1a; color: #f0f0f0; border: 1px solid #333; border-radius: 8px; padding: 8px; }")
+        self._custom_style_input.setText(self._style_modes.get(current_style_mode, ""))
         style_layout.addWidget(self._custom_style_input)
         layout.addWidget(style_card)
 
@@ -1022,6 +1128,10 @@ class SettingsWindow(QWidget):
         self._doubao_endpoint_input.setText(self._config.get("doubao_endpoint_id", ""))
         self._deepseek_api_key_input.setText(self._config.get("deepseek_api_key", ""))
 
+        # 润色模型配置区
+        self._polish_doubao_key_input.setText(self._config.get("doubao_api_key", ""))
+        self._polish_doubao_endpoint_input.setText(self._config.get("doubao_endpoint_id", ""))
+
         self._custom_style_input.setText(self._config.get("custom_style_prompt", ""))
 
         self._refresh_dict_list()
@@ -1059,7 +1169,17 @@ class SettingsWindow(QWidget):
         self._config["doubao_endpoint_id"] = self._doubao_endpoint_input.text()
         self._config["deepseek_api_key"] = self._deepseek_api_key_input.text()
 
-        self._config["custom_style_prompt"] = self._custom_style_input.text().strip()
+        # 同步润色区的配置（润色区和引擎区共享 doubao key）
+        if self._polish_doubao_key_input.text():
+            self._config["doubao_api_key"] = self._polish_doubao_key_input.text()
+        if self._polish_doubao_endpoint_input.text():
+            self._config["doubao_endpoint_id"] = self._polish_doubao_endpoint_input.text()
+
+        # 保存当前风格模式的提示词
+        current_mode = self._config.get("current_style_mode", "日常")
+        self._style_modes[current_mode] = self._custom_style_input.toPlainText().strip()
+        self._config["style_modes"] = self._style_modes
+        self._config["custom_style_prompt"] = self._custom_style_input.toPlainText().strip()
 
         if self._new_hotkey_keys is not None:
             self._config["hotkey"] = self._new_hotkey_keys
@@ -1105,6 +1225,56 @@ class SettingsWindow(QWidget):
         self._apply_config()
         self._status_label.setText("已重置为上次保存的设置")
         QTimer.singleShot(2000, lambda: self._update_status())
+
+    def _set_polish_model(self, model_id):
+        """切换润色模型"""
+        self._config["polish_model"] = model_id
+        for mid, btn in self._polish_model_btns.items():
+            btn.setChecked(mid == model_id)
+        model_index = {"off": 0, "qwen": 1, "doubao": 2, "deepseek": 3}
+        self._polish_config_stack.setCurrentIndex(model_index.get(model_id, 1))
+        from voice_typing.core.config import save_config
+        save_config(self._config)
+
+    def _switch_style_mode(self, mode_name):
+        """切换风格模式"""
+        # 保存当前模式的提示词
+        current = self._config.get("current_style_mode", "日常")
+        self._style_modes[current] = self._custom_style_input.toPlainText().strip()
+        # 切换
+        self._config["current_style_mode"] = mode_name
+        self._config["style_modes"] = self._style_modes
+        self._config["custom_style_prompt"] = self._style_modes.get(mode_name, "")
+        self._custom_style_input.setText(self._style_modes.get(mode_name, ""))
+        # 更新按钮状态
+        for name, btn in self._style_mode_btns.items():
+            btn.setChecked(name == mode_name)
+        from voice_typing.core.config import save_config
+        save_config(self._config)
+
+    def _add_style_mode(self):
+        """添加新的风格模式"""
+        from PyQt5.QtWidgets import QInputDialog
+        name, ok = QInputDialog.getText(self, "新增模式", "模式名称：")
+        if ok and name.strip():
+            name = name.strip()
+            if name in self._style_modes:
+                return
+            self._style_modes[name] = ""
+            self._config["style_modes"] = self._style_modes
+            # 创建按钮
+            style_btn_css = """
+                QPushButton { padding: 6px 14px; border-radius: 8px; border: 1px solid #333; }
+                QPushButton:checked { background: #2563eb; color: white; border: 1px solid #2563eb; }
+            """
+            btn = QPushButton(name)
+            btn.setCheckable(True)
+            btn.setStyleSheet(style_btn_css)
+            btn.clicked.connect(lambda checked, m=name: self._switch_style_mode(m))
+            self._style_mode_btns[name] = btn
+            # 插入到 + 按钮前面（倒数第2个位置）
+            # 直接切换到新模式
+            self._switch_style_mode(name)
 
     def _set_hotkey_mode(self, mode):
         """切换快捷键触发模式"""
