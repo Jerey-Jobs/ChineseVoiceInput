@@ -267,10 +267,9 @@ class SettingsWindow(QWidget):
 
         # 导航按钮
         nav_items = [
-            ("主界面", 0),
+            ("主页面", 0),
             ("历史记录", 1),
             ("词典", 2),
-            ("设置", 3),
         ]
         for label, idx in nav_items:
             btn = QPushButton(label)
@@ -296,6 +295,12 @@ class SettingsWindow(QWidget):
         status_row.addStretch()
         sidebar_layout.addLayout(status_row)
 
+        # 退出按钮（左下角）
+        self._sidebar_quit_btn = QPushButton("退出程序")
+        self._sidebar_quit_btn.setStyleSheet("QPushButton { background: #c0392b; color: white; border-radius: 8px; padding: 8px; }")
+        self._sidebar_quit_btn.clicked.connect(self._quit_app)
+        sidebar_layout.addWidget(self._sidebar_quit_btn)
+
         root.addWidget(sidebar)
 
         # ---- 分割线 ----
@@ -309,7 +314,6 @@ class SettingsWindow(QWidget):
         self._stack.addWidget(self._build_home_page())
         self._stack.addWidget(self._build_history_page())
         self._stack.addWidget(self._build_dictionary_page())
-        self._stack.addWidget(self._build_settings_page())
         root.addWidget(self._stack)
 
     # ---------- 导航 ----------
@@ -329,7 +333,16 @@ class SettingsWindow(QWidget):
 
     def _build_home_page(self):
         page = QWidget()
-        layout = QVBoxLayout(page)
+        outer = QVBoxLayout(page)
+        outer.setContentsMargins(0, 0, 0, 0)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.NoFrame)
+        scroll.setStyleSheet("QScrollArea { background: transparent; }")
+
+        content = QWidget()
+        layout = QVBoxLayout(content)
         layout.setContentsMargins(40, 36, 40, 36)
         layout.setSpacing(16)
 
@@ -375,8 +388,18 @@ class SettingsWindow(QWidget):
         elayout.addWidget(self._home_engine_status)
 
         layout.addWidget(engine_card)
-        layout.addStretch()
 
+        # 嵌入设置内容（不带自己的 scroll）
+        settings_widget = self._build_settings_content(layout)
+
+        layout.addStretch()
+        scroll.setWidget(content)
+        outer.addWidget(scroll)
+
+        self._status_label = QLabel("")
+        self._status_label.setObjectName("status")
+        self._status_label.setContentsMargins(40, 8, 40, 8)
+        outer.addWidget(self._status_label)
         return page
 
     def _make_stat_card(self, key, label_text, unit, color):
@@ -715,6 +738,19 @@ class SettingsWindow(QWidget):
         layout.setContentsMargins(40, 36, 40, 36)
         layout.setSpacing(16)
 
+        self._build_settings_content(layout)
+
+        scroll.setWidget(content)
+        outer.addWidget(scroll)
+
+        self._status_label = QLabel("")
+        self._status_label.setObjectName("status")
+        self._status_label.setContentsMargins(40, 8, 40, 8)
+        outer.addWidget(self._status_label)
+        return page
+
+    def _build_settings_content(self, layout):
+        """将设置内容写入指定 layout"""
         title = QLabel("设置")
         title.setStyleSheet("font-size: 16pt; font-weight: bold; color: #f0f0f0;")
         layout.addWidget(title)
@@ -765,11 +801,36 @@ class SettingsWindow(QWidget):
         volc_link.setOpenExternalLinks(True)
         volc_layout.addWidget(volc_link)
 
-        app_id_wrapper, self._volc_app_id_input = self._make_password_input("App ID（X-Api-App-Key）")
+        app_id_wrapper, self._volc_app_id_input = self._make_password_input("App ID（X-Api-App-Key）— 旧版认证")
         volc_layout.addWidget(app_id_wrapper)
 
-        access_token_wrapper, self._volc_access_token_input = self._make_password_input("Access Token（X-Api-Access-Key）")
+        access_token_wrapper, self._volc_access_token_input = self._make_password_input("Access Token（X-Api-Access-Key）— 旧版认证")
         volc_layout.addWidget(access_token_wrapper)
+
+        volc_apikey_wrapper, self._volc_apikey_input = self._make_password_input("API Key（X-Api-Key）— 新版认证，填了优先使用")
+        volc_layout.addWidget(volc_apikey_wrapper)
+
+        # Resource ID 选择
+        from PyQt5.QtWidgets import QComboBox
+        resource_row = QHBoxLayout()
+        resource_label = QLabel("Resource ID：")
+        resource_row.addWidget(resource_label)
+        self._volc_resource_combo = QComboBox()
+        self._volc_resource_combo.setEditable(True)
+        self._volc_resource_combo.addItem("volc.bigasr.sauc.duration")
+        self._volc_resource_combo.addItem("volc.seedasr.sauc.duration")
+        # 如果配置中有自定义值，加入并选中
+        saved_resource = self._config.get("volc_resource_id", "volc.bigasr.sauc.duration")
+        idx = self._volc_resource_combo.findText(saved_resource)
+        if idx >= 0:
+            self._volc_resource_combo.setCurrentIndex(idx)
+        else:
+            self._volc_resource_combo.addItem(saved_resource)
+            self._volc_resource_combo.setCurrentText(saved_resource)
+        self._volc_resource_combo.setStyleSheet("QComboBox { background: #1a1a1a; color: #f0f0f0; border: 1px solid #333; border-radius: 6px; padding: 4px 8px; }")
+        resource_row.addWidget(self._volc_resource_combo)
+        resource_row.addStretch()
+        volc_layout.addLayout(resource_row)
 
         volc_llm_label = QLabel("文本润色 (豆包大模型)")
         volc_llm_label.setObjectName("subtitle")
@@ -1004,15 +1065,6 @@ class SettingsWindow(QWidget):
 
         layout.addLayout(btn_row)
 
-        scroll.setWidget(content)
-        outer.addWidget(scroll)
-
-        self._status_label = QLabel("")
-        self._status_label.setObjectName("status")
-        self._status_label.setContentsMargins(40, 8, 40, 8)
-        outer.addWidget(self._status_label)
-        return page
-
     # ---------- 托盘 ----------
 
     def _init_tray(self):
@@ -1089,9 +1141,14 @@ class SettingsWindow(QWidget):
             )
             engine.initialize()
         elif engine_type == "volcengine":
+            vocab = self._config.get("custom_vocabulary", [])
+            hotwords = [v["term"] for v in vocab if v.get("term")]
             engine = VolcengineEngine(
                 app_id=self._config.get("volc_asr_app_id", ""),
                 access_token=self._config.get("volc_asr_access_token", ""),
+                hotwords=hotwords,
+                resource_id=self._config.get("volc_resource_id", ""),
+                api_key=self._config.get("volc_api_key", ""),
             )
             engine.initialize()
         else:
@@ -1114,6 +1171,7 @@ class SettingsWindow(QWidget):
         self._api_input.setText(self._config.get("alibaba_api_key", ""))
         self._volc_app_id_input.setText(self._config.get("volc_asr_app_id", ""))
         self._volc_access_token_input.setText(self._config.get("volc_asr_access_token", ""))
+        self._volc_apikey_input.setText(self._config.get("volc_api_key", ""))
 
         self._on_engine_preview()
 
@@ -1153,6 +1211,8 @@ class SettingsWindow(QWidget):
         self._config["alibaba_api_key"] = self._api_input.text()
         self._config["volc_asr_app_id"] = self._volc_app_id_input.text()
         self._config["volc_asr_access_token"] = self._volc_access_token_input.text()
+        self._config["volc_api_key"] = self._volc_apikey_input.text()
+        self._config["volc_resource_id"] = self._volc_resource_combo.currentText().strip()
 
         autostart = self._autostart_check.isChecked()
         self._config["autostart"] = autostart
