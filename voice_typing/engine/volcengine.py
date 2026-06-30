@@ -58,10 +58,12 @@ class VolcengineEngine(BaseEngine):
 
     name = "火山引擎 BigModel ASR"
 
-    def __init__(self, app_id: str = "", access_token: str = "", hotwords: list = None):
+    def __init__(self, app_id: str = "", access_token: str = "", hotwords: list = None, resource_id: str = "", api_key: str = ""):
         self._app_id = app_id
         self._access_token = access_token
+        self._api_key = api_key  # 新版认证（单 key）
         self._hotwords = hotwords or []
+        self._resource_id = resource_id or RESOURCE_ID
         self._running = False
         self._audio_queue = None
         self._text_callback = None
@@ -69,10 +71,10 @@ class VolcengineEngine(BaseEngine):
         self._ws_done = None
 
     def initialize(self) -> bool:
-        return bool(self._app_id and self._access_token)
+        return bool(self._api_key or (self._app_id and self._access_token))
 
     def is_available(self) -> bool:
-        return bool(self._app_id and self._access_token)
+        return bool(self._api_key or (self._app_id and self._access_token))
 
     def set_text_callback(self, cb):
         self._text_callback = cb
@@ -88,16 +90,32 @@ class VolcengineEngine(BaseEngine):
         asyncio.run(self._ws_session())
 
     async def _ws_session(self):
-        headers = {
-            "X-Api-App-Key": self._app_id,
-            "X-Api-Access-Key": self._access_token,
-            "X-Api-Resource-Id": RESOURCE_ID,
-            "X-Api-Request-Id": str(uuid.uuid4()),
-        }
-        print(f"[Volcengine] 连接: {WS_URL}")
-        print(f"[Volcengine] X-Api-App-Key: {self._app_id}")
-        print(f"[Volcengine] X-Api-Access-Key: {self._access_token[:8]}...({len(self._access_token)})")
-        print(f"[Volcengine] X-Api-Resource-Id: {RESOURCE_ID}")
+        # 新版认证（单 X-Api-Key）vs 旧版（App-Key + Access-Key）
+        if self._api_key:
+            headers = {
+                "X-Api-Key": self._api_key,
+                "X-Api-Resource-Id": self._resource_id,
+                "X-Api-Request-Id": str(uuid.uuid4()),
+                "X-Api-Connect-Id": str(uuid.uuid4()),
+            }
+            print(f"[ASR] 引擎: 火山引擎 Seed-ASR (新版认证)")
+            print(f"[ASR] API: {WS_URL}")
+            print(f"[ASR] X-Api-Key: {self._api_key[:8]}...({len(self._api_key)})")
+        else:
+            headers = {
+                "X-Api-App-Key": self._app_id,
+                "X-Api-Access-Key": self._access_token,
+                "X-Api-Resource-Id": self._resource_id,
+                "X-Api-Request-Id": str(uuid.uuid4()),
+                "X-Api-Connect-Id": str(uuid.uuid4()),
+            }
+            print(f"[ASR] 引擎: 火山引擎 BigModel (旧版认证)")
+            print(f"[ASR] API: {WS_URL}")
+            print(f"[ASR] X-Api-App-Key: {self._app_id}")
+            print(f"[ASR] X-Api-Access-Key: {self._access_token[:8]}...({len(self._access_token)})")
+        print(f"[ASR] X-Api-Resource-Id: {self._resource_id}")
+        if self._hotwords:
+            print(f"[ASR] 热词: {len(self._hotwords)} 个")
         try:
             async with websockets.connect(
                 WS_URL,
