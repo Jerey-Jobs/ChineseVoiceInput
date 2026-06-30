@@ -192,22 +192,30 @@ class VoiceTypingApp(QObject):
             prompt += f"\n\n## 输出风格要求\n{custom_style}"
 
         # 润色路由：根据配置选择模型
+        import time as _time
         print(f"[润色] 强度: {strength}, 模型: {polish_model}")
         print(f"[润色] 原文: {raw_text}")
 
         polished = None
+        _t0 = _time.time()
         if polish_model == "deepseek":
             polished = self._call_llm_deepseek_stream(prompt, raw_text)
         elif polish_model == "doubao":
             polished = self._call_llm_doubao_stream(prompt, raw_text)
         elif polish_model == "qwen":
             polished = self._call_llm_qwen(prompt, raw_text)
+        _t1 = _time.time()
+        print(f"[润色] 耗时: {_t1 - _t0:.2f}s (模型: {polish_model})")
 
         # fallback: 如果选中的模型失败，尝试其他
         if polished is None and polish_model != "qwen":
+            _t0 = _time.time()
             polished = self._call_llm_qwen(prompt, raw_text)
+            print(f"[润色] fallback Qwen 耗时: {_time.time() - _t0:.2f}s")
         if polished is None and polish_model != "doubao":
+            _t0 = _time.time()
             polished = self._call_llm_doubao_stream(prompt, raw_text)
+            print(f"[润色] fallback 豆包 耗时: {_time.time() - _t0:.2f}s")
 
         if polished is None:
             polished = raw_text

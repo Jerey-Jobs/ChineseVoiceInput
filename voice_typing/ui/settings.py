@@ -1091,7 +1091,7 @@ class SettingsWindow(QWidget):
     # ---------- 引擎 ----------
 
     def _make_password_input(self, placeholder, status_label=None):
-        """创建带眼睛显示/隐藏切换的密码输入框"""
+        """创建普通文本输入框"""
         wrapper = QWidget()
         layout = QHBoxLayout(wrapper)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -1099,27 +1099,7 @@ class SettingsWindow(QWidget):
 
         input_field = QLineEdit()
         input_field.setPlaceholderText(placeholder)
-        input_field.setEchoMode(QLineEdit.Password)
         layout.addWidget(input_field)
-
-        eye_btn = QPushButton()
-        eye_btn.setIcon(_make_eye_icon(visible=True))
-        eye_btn.setFixedSize(35, 35)
-        eye_btn.setStyleSheet("""
-            QPushButton { border: none; background: transparent; }
-            QPushButton:hover { background: rgba(255, 255, 255, 0.1); border-radius: 4px; }
-        """)
-        eye_btn.setCursor(Qt.PointingHandCursor)
-        eye_btn.setToolTip("显示/隐藏")
-
-        def toggle():
-            if input_field.echoMode() == QLineEdit.Password:
-                input_field.setEchoMode(QLineEdit.Normal)
-                eye_btn.setIcon(_make_eye_icon(visible=False))
-            else:
-                input_field.setEchoMode(QLineEdit.Password)
-                eye_btn.setIcon(_make_eye_icon(visible=True))
-        eye_btn.clicked.connect(toggle)
 
         if status_label is not None:
             def on_text_changed(text):
