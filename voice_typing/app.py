@@ -57,6 +57,10 @@ class VoiceTypingApp(QObject):
         self._settings = SettingsWindow(self._config, self._hotkey)
         self._settings.engine_changed.connect(self._on_engine_changed)
         self._overlay = OverlayWindow()
+        self._overlay.set_ai_toggle_callback(self._on_ai_toggle)
+        # 初始化 AI 按钮状态
+        polish_model = self._config.get("polish_model", "qwen")
+        self._overlay.set_ai_enabled(polish_model != "off")
         self._overlay.show()
 
     def _create_engine(self):
@@ -141,6 +145,23 @@ class VoiceTypingApp(QObject):
     @pyqtSlot(str)
     def _on_polish_progress(self, partial_text):
         self._overlay.set_text(partial_text)
+
+    def _on_ai_toggle(self, enabled):
+        """AI 按钮点击回调：切换润色开关"""
+        if enabled:
+            # 恢复之前选择的润色模型（如果之前是 off，默认用 qwen）
+            prev = self._config.get("_prev_polish_model", "qwen")
+            self._config["polish_model"] = prev
+            print(f"[AI] 润色已开启: {prev}")
+        else:
+            # 记住当前模型，切为 off
+            current = self._config.get("polish_model", "qwen")
+            if current != "off":
+                self._config["_prev_polish_model"] = current
+            self._config["polish_model"] = "off"
+            print("[AI] 润色已关闭")
+        from voice_typing.core.config import save_config
+        save_config(self._config)
 
     @pyqtSlot(str)
     def _on_polish_done(self, polished_text):

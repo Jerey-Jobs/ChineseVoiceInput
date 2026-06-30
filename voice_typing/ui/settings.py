@@ -909,7 +909,7 @@ class SettingsWindow(QWidget):
             QPushButton { padding: 6px 12px; border-radius: 8px; border: 1px solid #333; }
             QPushButton:checked { background: #2563eb; color: white; border: 1px solid #2563eb; }
         """
-        for model_id, model_name in [("off", "关闭"), ("qwen", "阿里 Qwen"), ("doubao", "豆包"), ("deepseek", "DeepSeek")]:
+        for model_id, model_name in [("qwen", "阿里 Qwen"), ("doubao", "豆包"), ("deepseek", "DeepSeek")]:
             btn = QPushButton(model_name)
             btn.setCheckable(True)
             btn.setChecked(model_id == current_polish)
@@ -925,17 +925,11 @@ class SettingsWindow(QWidget):
 
         self._polish_config_stack = QStackedWidget()
 
-        # 关闭润色（无配置）
-        off_widget = QLabel("润色已关闭，语音识别结果将直接输出")
-        off_widget.setObjectName("subtitle")
-        off_widget.setWordWrap(True)
-        self._polish_config_stack.addWidget(off_widget)  # index 0
-
         # Qwen 配置
         qwen_widget = QLabel("使用上方阿里云 API Key 进行润色（无需额外配置）")
         qwen_widget.setObjectName("subtitle")
         qwen_widget.setWordWrap(True)
-        self._polish_config_stack.addWidget(qwen_widget)  # index 1
+        self._polish_config_stack.addWidget(qwen_widget)  # index 0
 
         # 豆包配置
         from PyQt5.QtWidgets import QWidget as _QW
@@ -958,8 +952,8 @@ class SettingsWindow(QWidget):
         self._polish_config_stack.addWidget(deepseek_widget)  # index 2
 
         # 设置当前显示
-        model_index = {"off": 0, "qwen": 1, "doubao": 2, "deepseek": 3}
-        self._polish_config_stack.setCurrentIndex(model_index.get(current_polish, 1))
+        model_index = {"qwen": 0, "doubao": 1, "deepseek": 2}
+        self._polish_config_stack.setCurrentIndex(model_index.get(current_polish, 0))
         polish_llm_layout.addWidget(self._polish_config_stack)
 
         polish_llm_hint = QLabel("选择用哪个模型来润色语音转写结果")
@@ -1299,8 +1293,8 @@ class SettingsWindow(QWidget):
         self._config["polish_model"] = model_id
         for mid, btn in self._polish_model_btns.items():
             btn.setChecked(mid == model_id)
-        model_index = {"off": 0, "qwen": 1, "doubao": 2, "deepseek": 3}
-        self._polish_config_stack.setCurrentIndex(model_index.get(model_id, 1))
+        model_index = {"qwen": 0, "doubao": 1, "deepseek": 2}
+        self._polish_config_stack.setCurrentIndex(model_index.get(model_id, 0))
         from voice_typing.core.config import save_config
         save_config(self._config)
 

@@ -7,7 +7,7 @@ from PyQt5.QtGui import (
     QPainter, QColor, QBrush, QPen, QLinearGradient, QRadialGradient,
     QFontMetrics, QPainterPath
 )
-from PyQt5.QtWidgets import QWidget, QLabel, QHBoxLayout, QVBoxLayout, QApplication
+from PyQt5.QtWidgets import QWidget, QLabel, QHBoxLayout, QVBoxLayout, QApplication, QPushButton
 
 
 class SiriGlowWidget(QWidget):
@@ -173,6 +173,14 @@ class OverlayWindow(QWidget):
         self._glow = SiriGlowWidget()
         self._text_received = False
 
+        # AI 润色开关按钮（覆盖在圆心）
+        self._ai_enabled = True
+        self._ai_btn = QPushButton("AI", self)
+        self._ai_btn.setFixedSize(28, 28)
+        self._ai_btn.setCursor(Qt.PointingHandCursor)
+        self._ai_btn.clicked.connect(self._toggle_ai)
+        self._update_ai_btn_style()
+
         self._text_label = QLabel("")
         self._text_label.setStyleSheet(
             "color: #f0f0f0; font-size: 11pt; background: transparent; padding: 0px;"
@@ -238,6 +246,7 @@ class OverlayWindow(QWidget):
     def start_recording(self):
         """开始录音：展开浮窗，启动 Siri 光晕动画"""
         self._idle = False
+        self._ai_btn.hide()
         self._text_received = False
         self._text_label.hide()
         self._text_label.setText("")
@@ -290,11 +299,61 @@ class OverlayWindow(QWidget):
         width = max(240, text_width + 32)
         self._animate_to_size(width, 80)
 
+    def _toggle_ai(self):
+        """切换 AI 润色开关"""
+        self._ai_enabled = not self._ai_enabled
+        self._update_ai_btn_style()
+        # 通知 app 更新配置
+        if hasattr(self, '_on_ai_toggle') and self._on_ai_toggle:
+            self._on_ai_toggle(self._ai_enabled)
+
+    def _update_ai_btn_style(self):
+        if self._ai_enabled:
+            self._ai_btn.setStyleSheet("""
+                QPushButton {
+                    background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #7c3aed, stop:1 #2563eb);
+                    color: white; font-size: 9pt; font-weight: bold;
+                    border-radius: 14px; border: none;
+                }
+            """)
+            self._ai_btn.setToolTip("AI 润色已开启，点击关闭")
+        else:
+            self._ai_btn.setStyleSheet("""
+                QPushButton {
+                    background: #333; color: #888;
+                    font-size: 9pt; font-weight: bold;
+                    border-radius: 14px; border: 1px solid #555;
+                }
+            """)
+            self._ai_btn.setToolTip("AI 润色已关闭，点击开启")
+
+    def set_ai_toggle_callback(self, callback):
+        """设置 AI 开关回调"""
+        self._on_ai_toggle = callback
+
+    def set_ai_enabled(self, enabled):
+        """外部设置 AI 状态"""
+        self._ai_enabled = enabled
+        self._update_ai_btn_style()
+
+    def resizeEvent(self, event):
+        """窗口大小变化时重新定位 AI 按钮到中心"""
+        super().resizeEvent(event)
+        if self._idle:
+            # 待机时按钮在正中心
+            bx = (self.width() - self._ai_btn.width()) // 2
+            by = (self.height() - self._ai_btn.height()) // 2
+            self._ai_btn.move(bx, by)
+            self._ai_btn.show()
+        else:
+            self._ai_btn.hide()
+
     def reset(self):
         """重置到待机状态：旋转圆环"""
         self._idle = True
-        self._glow.stop()  # 切回 idle 模式（旋转）
+        self._glow.stop()
         self._glow.show()
+        self._ai_btn.show()
         self._text_label.hide()
         self._text_label.setText("")
         self._animate_to_size(64, 64)
