@@ -1,99 +1,82 @@
-# VoiceType · AI 语音输入工具
+# ChineseVoiceInput · AI 中文语音输入工具
 
-[![Release](https://img.shields.io/github/v/release/hongyan199048/voice_typing)](https://github.com/hongyan199048/voice_typing/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](#许可)
 [![Platform](https://img.shields.io/badge/platform-Ubuntu%20%2F%20X11-orange)](#系统要求)
 
-> Ubuntu 桌面下的实时 AI 语音转文字工具。按住快捷键说话，松开即把识别并润色后的文字自动粘贴到光标处。
-
-<!-- 可选：在此放一张 GIF 演示，效果远胜千言。 -->
+> Ubuntu 桌面下的实时 AI 语音转文字工具。快捷键触发说话，识别 + 润色后自动粘贴到光标处。
 
 ## ✨ 功能特性
 
-- 🎤 **实时语音转写** —— 说话时屏幕底部浮窗同步显示
-- ⌨️ **自动粘贴** —— 松开快捷键，文字直接落到当前光标位置
-- 🔥 **全局快捷键** —— 支持「组合键」与「单键长按」两种触发模式（默认 `Ctrl+Alt+V`）
-- ☁️ **双云端引擎** —— 阿里云 Paraformer / 火山引擎 BigModel，任选其一
-- 🪄 **大模型润色** —— 自动清洗口语、补标点，三档强度可调（Qwen-Plus / 豆包）
-- 📒 **自定义词库** —— 别名替换，专有名词不再识别错
-- 🎨 **暗黑极简界面** —— 设置窗口 + 可拖拽实时浮窗
+- 🎤 **实时语音转写** —— Siri 风格彩色动画浮窗，录音时展开波浪，待机时旋转圆环
+- ⌨️ **自动粘贴** —— 识别完成后文字直接落到当前光标位置
+- 🔥 **双触发模式** —— 「按住说话」或「双击触发 + 任意键停止」
+- ☁️ **双云端 ASR 引擎** —— 阿里云 Paraformer / 火山引擎 BigModel（支持 Seed-ASR 2.0）
+- 🪄 **独立润色引擎** —— 可选 阿里 Qwen / 豆包 / DeepSeek，也可关闭润色
+- 📝 **多模式风格提示词** —— 日常 / 专业 / 自定义，每个模式独立提示词
+- 📒 **自定义热词** —— 一键同步到云端，提升专业术语识别率
+- 🛡️ **单实例锁** —— 防止重复启动
+- ⏱️ **录音保护** —— 最长 20 秒自动停止，避免过度消耗
+- 🎨 **暗黑极简界面** —— 主页面集成所有设置，侧边栏一键退出
 
 ## 系统要求
 
 - **操作系统**：Ubuntu / 其他 Linux 桌面，**X11 会话**（Wayland 下全局快捷键与粘贴可能失效）
-- **Python**：3.8+（从源码运行时）
+- **Python**：3.8+
 - **云端账号**：阿里云 DashScope 或火山引擎二选一
 
 ## 📦 安装
-
-### 方式一：deb 包（推荐）
-
-复制下面整段即可自动下载并安装**最新版**，无需手动填版本号：
-
-```bash
-# 自动获取最新 Release 的 deb 并安装
-URL=$(curl -s https://api.github.com/repos/hongyan199048/voice_typing/releases/latest \
-  | grep "browser_download_url.*\.deb" | cut -d '"' -f 4)
-wget -O voice-typing.deb "$URL"
-sudo dpkg -i voice-typing.deb
-sudo apt-get install -f   # 自动补齐依赖
-```
-
-> 也可前往 [GitHub Releases](https://github.com/hongyan199048/voice_typing/releases) 手动下载指定版本。
-
-安装后从应用菜单启动，或在终端运行 `voice-typing`。
-
-### 方式二：从源码运行
 
 ```bash
 # 系统依赖
 sudo apt install xclip xdotool portaudio19-dev
 
 # 拉取代码并安装 Python 依赖
-git clone https://github.com/hongyan199048/voice_typing.git
-cd voice_typing
+git clone https://github.com/Jerey-Jobs/ChineseVoiceInput.git
+cd ChineseVoiceInput
 pip install -r requirements.txt
 
 # 启动
-python main.py        # 或：python -m voice_typing
+python3 main.py
 ```
 
 ## 🚀 使用
 
-首次运行会打开设置窗口：
+首次运行会打开设置窗口（主页面已集成所有设置）：
 
-1. **选择引擎** —— 阿里云 Paraformer 或 火山引擎 BigModel
+1. **选择 ASR 引擎** —— 阿里云 Paraformer 或 火山引擎 BigModel
 2. **配置凭证**
    - 阿里云：填入 [DashScope API Key](https://dashscope.console.aliyun.com/)
-   - 火山引擎：填入 [ARK](https://console.volcengine.com/ark/) 的 App ID + Access Token
-3. **润色强度** —— 轻度 / 中度 / 重度（可关闭）
-4. **设置快捷键** —— 点击「录制快捷键」，按下你想要的组合
-5. *(可选)* **自定义词库** —— 添加别名替换规则
+   - 火山引擎（旧版）：App ID + Access Token
+   - 火山引擎（新版）：API Key + Resource ID（支持 `volc.seedasr.sauc.duration`）
+3. **选择润色模型** —— 关闭 / 阿里 Qwen / 豆包 / DeepSeek
+4. **润色强度** —— 轻度 / 中度 / 重度
+5. **设置快捷键** —— 支持「按住说话」和「双击触发」两种模式
+6. **自定义风格** —— 多模式切换（日常/专业/自定义），每个模式独立提示词
+7. *(可选)* **自定义词库** —— 添加专业术语，一键同步热词到云端
 
 **语音输入流程**：
 
-1. 按住快捷键开始录音
-2. 屏幕底部浮窗实时显示转写内容
-3. 松开快捷键 → 大模型润色 → 文字自动粘贴到光标位置
+- **按住模式**：按住快捷键说话 → 松开 → 润色 → 粘贴
+- **双击模式**：双击触发键开始录音 → 说完按任意键停止 → 润色 → 粘贴
 
 ## 🔧 故障排查
 
 | 现象 | 排查方向 |
 |------|----------|
-| 快捷键无响应 | 是否与系统快捷键冲突；尝试更换组合键；确认运行在 X11 而非 Wayland |
-| 录音无声音 | 检查麦克风权限；运行 `arecord -l` 确认音频设备 |
-| 粘贴失败 | 确认已安装 `xclip` 与 `xdotool`；确认处于 X11 会话 |
-| 识别报错 / 无结果 | 检查 API Key 是否正确、网络是否可达对应云服务 |
+| 快捷键无响应 | 是否与系统快捷键冲突；尝试更换组合键；确认 X11 会话 |
+| 录音无声音 | 检查麦克风权限；`arecord -l` 确认设备 |
+| 粘贴失败 | 确认已安装 `xclip` + `xdotool`；确认 X11 |
+| ASR 报错 401 | 检查 API Key 是否正确、是否过期 |
+| 润色无效果 | 确认润色模型未设为"关闭"；检查对应 LLM 的 Key |
+| ALSA/Jack 警告 | 无害日志，不影响功能 |
 
 ## ⚙️ 配置文件
-
-配置保存在：
 
 ```
 ~/.config/voice_typing/config.json
 ```
 
-包含引擎选择、API 凭证、润色强度、快捷键、自定义词库等。
+包含：引擎选择、API 凭证、润色模型、润色强度、快捷键、触发模式、自定义词库、风格模式等。
 
 ## 📄 许可
 
@@ -102,4 +85,6 @@ python main.py        # 或：python -m voice_typing
 ## 🔗 相关链接
 
 - 阿里云 DashScope 控制台：<https://dashscope.console.aliyun.com/>
+- 火山引擎语音控制台：<https://console.volcengine.com/speech/new/experience/asr>
 - 火山引擎 ARK 控制台：<https://console.volcengine.com/ark/>
+- DeepSeek 开放平台：<https://platform.deepseek.com/>
