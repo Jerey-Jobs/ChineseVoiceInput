@@ -75,6 +75,7 @@ class VoiceTypingApp(QObject):
                 hotwords=hotwords,
                 resource_id=self._config.get("volc_resource_id", ""),
                 api_key=self._config.get("volc_api_key", ""),
+                hotword_id=self._config.get("volc_hotword_id", ""),
             )
         else:
             self._engine = AlibabaEngine(

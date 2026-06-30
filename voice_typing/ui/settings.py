@@ -832,6 +832,11 @@ class SettingsWindow(QWidget):
         resource_row.addStretch()
         volc_layout.addLayout(resource_row)
 
+        # 云端热词 ID
+        self._volc_hotword_id_input = QLineEdit()
+        self._volc_hotword_id_input.setPlaceholderText("云端热词ID（如 1e3a872c-ff82-471b-...，可选）")
+        volc_layout.addWidget(self._volc_hotword_id_input)
+
         volc_llm_label = QLabel("文本润色 (豆包大模型)")
         volc_llm_label.setObjectName("subtitle")
         volc_layout.addWidget(volc_llm_label)
@@ -1149,6 +1154,7 @@ class SettingsWindow(QWidget):
                 hotwords=hotwords,
                 resource_id=self._config.get("volc_resource_id", ""),
                 api_key=self._config.get("volc_api_key", ""),
+                hotword_id=self._config.get("volc_hotword_id", ""),
             )
             engine.initialize()
         else:
@@ -1172,6 +1178,7 @@ class SettingsWindow(QWidget):
         self._volc_app_id_input.setText(self._config.get("volc_asr_app_id", ""))
         self._volc_access_token_input.setText(self._config.get("volc_asr_access_token", ""))
         self._volc_apikey_input.setText(self._config.get("volc_api_key", ""))
+        self._volc_hotword_id_input.setText(self._config.get("volc_hotword_id", ""))
 
         self._on_engine_preview()
 
@@ -1212,6 +1219,7 @@ class SettingsWindow(QWidget):
         self._config["volc_asr_app_id"] = self._volc_app_id_input.text()
         self._config["volc_asr_access_token"] = self._volc_access_token_input.text()
         self._config["volc_api_key"] = self._volc_apikey_input.text()
+        self._config["volc_hotword_id"] = self._volc_hotword_id_input.text().strip()
         self._config["volc_resource_id"] = self._volc_resource_combo.currentText().strip()
 
         autostart = self._autostart_check.isChecked()
