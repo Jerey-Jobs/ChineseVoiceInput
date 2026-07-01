@@ -125,11 +125,11 @@ def _make_eye_icon(visible=True):
     return QIcon(pixmap)
 
 
-CARD_BG = QColor("#1a1a1a")
-CARD_HOVER = QColor("#222222")
+CARD_BG = QColor("#ffffff")
+CARD_HOVER = QColor("#f0f0f2")
 CARD_SELECTED = QColor("#22c55e")
-CARD_TEXT = QColor("#f0f0f0")
-CARD_TEXT_SELECTED = QColor("#0d0d0d")
+CARD_TEXT = QColor("#1d1d1f")
+CARD_TEXT_SELECTED = QColor("#ffffff")
 CARD_RADIUS = 10
 CARD_PADDING_H = 14
 CARD_PADDING_V = 12
@@ -262,12 +262,12 @@ class SettingsWindow(QWidget):
         # Logo
         from voice_typing import __version__, __dev__
         logo = QLabel("VoiceType")
-        logo.setStyleSheet("font-size: 16pt; font-weight: bold; color: #f0f0f0; padding: 8px 8px 4px 8px;")
+        logo.setStyleSheet("font-size: 16pt; font-weight: bold; color: #1d1d1f; padding: 8px 8px 4px 8px;")
         sidebar_layout.addWidget(logo)
 
         ver_text = f"v{__version__}-dev" if __dev__ else f"v{__version__}"
         ver_label = QLabel(ver_text)
-        ver_label.setStyleSheet("font-size: 10pt; color: #666; padding: 0 8px 8px 8px;")
+        ver_label.setStyleSheet("font-size: 10pt; color: #8e8e93; padding: 0 8px 8px 8px;")
         sidebar_layout.addWidget(ver_label)
 
         # 导航按钮
@@ -295,14 +295,14 @@ class SettingsWindow(QWidget):
         )
         status_row.addWidget(self._sidebar_indicator)
         self._sidebar_engine_label = QLabel("引擎未就绪")
-        self._sidebar_engine_label.setStyleSheet("font-size: 10pt; color: #aaa;")
+        self._sidebar_engine_label.setStyleSheet("font-size: 10pt; color: #6e6e73;")
         status_row.addWidget(self._sidebar_engine_label)
         status_row.addStretch()
         sidebar_layout.addLayout(status_row)
 
         # 退出按钮（左下角）
         self._sidebar_quit_btn = QPushButton("退出程序")
-        self._sidebar_quit_btn.setStyleSheet("QPushButton { background: #c0392b; color: white; border-radius: 8px; padding: 8px; }")
+        self._sidebar_quit_btn.setStyleSheet("QPushButton { background: #ff3b30; color: white; border-radius: 8px; padding: 8px; }")
         self._sidebar_quit_btn.clicked.connect(self._quit_app)
         sidebar_layout.addWidget(self._sidebar_quit_btn)
 
@@ -311,7 +311,7 @@ class SettingsWindow(QWidget):
         # ---- 分割线 ----
         sep = QFrame()
         sep.setFrameShape(QFrame.VLine)
-        sep.setStyleSheet("QFrame { color: #1a1a1a; }")
+        sep.setStyleSheet("QFrame { color: #ffffff; }")
         root.addWidget(sep)
 
         # ---- 内容区 ----
@@ -349,7 +349,7 @@ class SettingsWindow(QWidget):
         scroll.setStyleSheet("""
             QScrollArea { background: transparent; }
             QScrollBar:vertical {
-                background: #1a1a1a; width: 8px; border-radius: 4px; margin: 4px 2px;
+                background: #ffffff; width: 8px; border-radius: 4px; margin: 4px 2px;
             }
             QScrollBar::handle:vertical {
                 background: #444; border-radius: 4px; min-height: 30px;
@@ -364,7 +364,7 @@ class SettingsWindow(QWidget):
         layout.setSpacing(16)
 
         title = QLabel("使用统计")
-        title.setStyleSheet("font-size: 16pt; font-weight: bold; color: #f0f0f0;")
+        title.setStyleSheet("font-size: 16pt; font-weight: bold; color: #1d1d1f;")
         layout.addWidget(title)
 
         layout.addSpacing(8)
@@ -421,7 +421,7 @@ class SettingsWindow(QWidget):
 
     def _make_stat_card(self, key, label_text, unit, color):
         card = QGroupBox("")
-        card.setStyleSheet("QGroupBox { border: none; border-radius: 16px; background: #141414; padding: 20px; }")
+        card.setStyleSheet("QGroupBox { border: none; border-radius: 16px; background: #ffffff; padding: 20px; }")
         layout = QVBoxLayout(card)
         layout.setSpacing(8)
 
@@ -434,7 +434,7 @@ class SettingsWindow(QWidget):
         layout.addWidget(value_label)
 
         unit_label = QLabel(unit)
-        unit_label.setStyleSheet("font-size: 10pt; color: #666;")
+        unit_label.setStyleSheet("font-size: 10pt; color: #8e8e93;")
         layout.addWidget(unit_label)
 
         self._stat_labels[key] = value_label
@@ -486,7 +486,7 @@ class SettingsWindow(QWidget):
 
         title_row = QHBoxLayout()
         title = QLabel("历史记录")
-        title.setStyleSheet("font-size: 16pt; font-weight: bold; color: #f0f0f0;")
+        title.setStyleSheet("font-size: 16pt; font-weight: bold; color: #1d1d1f;")
         title_row.addWidget(title)
         title_row.addStretch()
 
@@ -506,7 +506,7 @@ class SettingsWindow(QWidget):
         self._history_list = QListWidget()
         self._history_list.setStyleSheet("""
             QListWidget {
-                background: #141414;
+                background: #ffffff;
                 border: none;
                 border-radius: 12px;
                 padding: 8px;
@@ -575,7 +575,7 @@ class SettingsWindow(QWidget):
 
         title_row = QHBoxLayout()
         title = QLabel("自定义词典")
-        title.setStyleSheet("font-size: 16pt; font-weight: bold; color: #f0f0f0;")
+        title.setStyleSheet("font-size: 16pt; font-weight: bold; color: #1d1d1f;")
         title_row.addWidget(title)
         title_row.addStretch()
 
@@ -592,7 +592,7 @@ class SettingsWindow(QWidget):
         self._dict_list = QListWidget()
         self._dict_list.setStyleSheet("""
             QListWidget {
-                background: #141414;
+                background: #ffffff;
                 border: none;
                 border-radius: 12px;
                 padding: 8px;
@@ -621,7 +621,7 @@ class SettingsWindow(QWidget):
 
         sync_btn = QPushButton("同步热词")
         sync_btn.setFixedWidth(80)
-        sync_btn.setStyleSheet("QPushButton { background: #2563eb; color: white; }")
+        sync_btn.setStyleSheet("QPushButton { background: #007aff; color: white; }")
         sync_btn.clicked.connect(self._sync_hotwords)
         term_row.addWidget(sync_btn)
 
@@ -769,7 +769,7 @@ class SettingsWindow(QWidget):
     def _build_settings_content(self, layout):
         """将设置内容写入指定 layout"""
         title = QLabel("设置")
-        title.setStyleSheet("font-size: 16pt; font-weight: bold; color: #f0f0f0;")
+        title.setStyleSheet("font-size: 16pt; font-weight: bold; color: #1d1d1f;")
         layout.addWidget(title)
 
         # 引擎选择
@@ -843,7 +843,7 @@ class SettingsWindow(QWidget):
         else:
             self._volc_resource_combo.addItem(saved_resource)
             self._volc_resource_combo.setCurrentText(saved_resource)
-        self._volc_resource_combo.setStyleSheet("QComboBox { background: #1a1a1a; color: #f0f0f0; border: 1px solid #333; border-radius: 6px; padding: 4px 8px; }")
+        self._volc_resource_combo.setStyleSheet("QComboBox { background: #ffffff; color: #1d1d1f; border: 1px solid #e0e0e0; border-radius: 6px; padding: 4px 8px; }")
         resource_row.addWidget(self._volc_resource_combo)
         resource_row.addStretch()
         volc_layout.addLayout(resource_row)
@@ -897,8 +897,8 @@ class SettingsWindow(QWidget):
         self._mode_hold.setChecked(current_mode == "hold")
         self._mode_double.setChecked(current_mode == "double_tap")
         mode_style = """
-            QPushButton { padding: 6px 12px; border-radius: 8px; border: 1px solid #333; }
-            QPushButton:checked { background: #2563eb; color: white; border: 1px solid #2563eb; }
+            QPushButton { padding: 6px 12px; border-radius: 8px; border: 1px solid #e0e0e0; }
+            QPushButton:checked { background: #007aff; color: white; border: 1px solid #007aff; }
         """
         self._mode_hold.setStyleSheet(mode_style)
         self._mode_double.setStyleSheet(mode_style)
@@ -922,8 +922,8 @@ class SettingsWindow(QWidget):
         self._polish_model_btns = {}
         current_polish = self._config.get("polish_model", "qwen")
         polish_btn_css = """
-            QPushButton { padding: 6px 12px; border-radius: 8px; border: 1px solid #333; }
-            QPushButton:checked { background: #2563eb; color: white; border: 1px solid #2563eb; }
+            QPushButton { padding: 6px 12px; border-radius: 8px; border: 1px solid #e0e0e0; }
+            QPushButton:checked { background: #007aff; color: white; border: 1px solid #007aff; }
         """
         for model_id, model_name in [("qwen", "阿里 Qwen"), ("doubao", "豆包"), ("deepseek", "DeepSeek")]:
             btn = QPushButton(model_name)
@@ -1017,8 +1017,8 @@ class SettingsWindow(QWidget):
         self._style_mode_btns = {}
         current_style_mode = self._config.get("current_style_mode", "日常")
         style_btn_css = """
-            QPushButton { padding: 6px 14px; border-radius: 8px; border: 1px solid #333; }
-            QPushButton:checked { background: #2563eb; color: white; border: 1px solid #2563eb; }
+            QPushButton { padding: 6px 14px; border-radius: 8px; border: 1px solid #e0e0e0; }
+            QPushButton:checked { background: #007aff; color: white; border: 1px solid #007aff; }
         """
         for mode_name in self._style_modes:
             btn = QPushButton(mode_name)
@@ -1042,7 +1042,7 @@ class SettingsWindow(QWidget):
         self._custom_style_input = QTextEdit()
         self._custom_style_input.setPlaceholderText("输入该模式的润色提示词（如：用简洁专业的技术文档风格）")
         self._custom_style_input.setMaximumHeight(100)
-        self._custom_style_input.setStyleSheet("QTextEdit { background: #1a1a1a; color: #f0f0f0; border: 1px solid #333; border-radius: 8px; padding: 8px; }")
+        self._custom_style_input.setStyleSheet("QTextEdit { background: #ffffff; color: #1d1d1f; border: 1px solid #e0e0e0; border-radius: 8px; padding: 8px; }")
         self._custom_style_input.setText(self._style_modes.get(current_style_mode, ""))
         style_layout.addWidget(self._custom_style_input)
         layout.addWidget(style_card)
@@ -1074,7 +1074,7 @@ class SettingsWindow(QWidget):
         btn_row.addStretch()
         self._quit_btn = QPushButton("退出程序")
         self._quit_btn.setMinimumWidth(100)
-        self._quit_btn.setStyleSheet("QPushButton { background: #c0392b; color: white; }")
+        self._quit_btn.setStyleSheet("QPushButton { background: #ff3b30; color: white; }")
         self._quit_btn.clicked.connect(self._quit_app)
         btn_row.addWidget(self._quit_btn)
 
@@ -1322,8 +1322,8 @@ class SettingsWindow(QWidget):
             self._config["style_modes"] = self._style_modes
             # 创建按钮
             style_btn_css = """
-                QPushButton { padding: 6px 14px; border-radius: 8px; border: 1px solid #333; }
-                QPushButton:checked { background: #2563eb; color: white; border: 1px solid #2563eb; }
+                QPushButton { padding: 6px 14px; border-radius: 8px; border: 1px solid #e0e0e0; }
+                QPushButton:checked { background: #007aff; color: white; border: 1px solid #007aff; }
             """
             btn = QPushButton(name)
             btn.setCheckable(True)

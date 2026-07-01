@@ -183,7 +183,7 @@ class OverlayWindow(QWidget):
 
         self._text_label = QLabel("")
         self._text_label.setStyleSheet(
-            "color: #f0f0f0; font-size: 11pt; background: transparent; padding: 0px;"
+            "color: #1d1d1f; font-size: 11pt; background: transparent; padding: 0px;"
         )
         self._text_label.setWordWrap(False)
         self._text_label.setAlignment(Qt.AlignCenter)
