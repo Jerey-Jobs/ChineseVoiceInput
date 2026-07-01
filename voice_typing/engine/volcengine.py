@@ -148,7 +148,7 @@ class VolcengineEngine(BaseEngine):
                 await ws.send(_build_frame(HDR_CONFIG, payload))
                 import time as _t
                 _conn_time = _t.time()
-                print(f"[ASR] WebSocket 已连接，config 已发送 (queue 积压: {self._audio_queue.qsize()} 帧)")
+                print(f"[ASR] WebSocket 已连接，config 已发送")
                 self._ws_ready.set()  # 通知：可以开始发音频了
 
                 async def send_loop():
@@ -199,9 +199,6 @@ class VolcengineEngine(BaseEngine):
 
     def send_audio(self, pcm_bytes: bytes):
         if self._running and self._audio_queue is not None:
-            # 等待 WebSocket 就绪再发送（最多等 3 秒）
-            if hasattr(self, '_ws_ready'):
-                self._ws_ready.wait(timeout=3.0)
             self._audio_queue.put(pcm_bytes)
 
     def stop(self) -> str:

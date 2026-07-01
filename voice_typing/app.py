@@ -92,6 +92,9 @@ class VoiceTypingApp(QObject):
         self._engine = engine
 
     def _on_recording_start_callback(self):
+        import time
+        self._hotkey_press_time = time.time()
+        print(f"[时序] 快捷键触发: {self._hotkey_press_time:.3f}")
         self.recording_start_signal.emit()
 
     def _on_recording_stop_callback(self):
@@ -103,10 +106,13 @@ class VoiceTypingApp(QObject):
     def _on_recording_start_main_thread(self):
         import time
         self._recording_start_time = time.time()
+        if hasattr(self, '_hotkey_press_time'):
+            print(f"[时序] 信号到主线程: +{(self._recording_start_time - self._hotkey_press_time)*1000:.0f}ms")
         self._overlay.start_recording()
         self._recorder = Recorder(self._engine, app_obj=self)
         self._recorder.text_update.connect(self._overlay.update_text)
         self._recorder.start()
+        print(f"[时序] Recorder.start() 完成: +{(time.time() - self._recording_start_time)*1000:.0f}ms")
         # 超时自动停止
         self._recording_timeout = QTimer()
         self._recording_timeout.setSingleShot(True)
