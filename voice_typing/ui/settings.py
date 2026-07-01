@@ -29,6 +29,11 @@ class _DarkComboBox(QComboBox):
         view = QListView()
         view.setSpacing(2)
         self.setView(view)
+        self.setFocusPolicy(Qt.StrongFocus)
+
+    def wheelEvent(self, event):
+        """禁用滚轮切换选项，必须点击才能更改"""
+        event.ignore()
 
     def showPopup(self):
         super().showPopup()
@@ -823,11 +828,10 @@ class SettingsWindow(QWidget):
         volc_layout.addWidget(volc_apikey_wrapper)
 
         # Resource ID 选择
-        from PyQt5.QtWidgets import QComboBox
         resource_row = QHBoxLayout()
         resource_label = QLabel("Resource ID：")
         resource_row.addWidget(resource_label)
-        self._volc_resource_combo = QComboBox()
+        self._volc_resource_combo = _DarkComboBox()
         self._volc_resource_combo.setEditable(True)
         self._volc_resource_combo.addItem("volc.bigasr.sauc.duration")
         self._volc_resource_combo.addItem("volc.seedasr.sauc.duration")
