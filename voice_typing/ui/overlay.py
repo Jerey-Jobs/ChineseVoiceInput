@@ -176,7 +176,7 @@ class OverlayWindow(QWidget):
         # AI 润色开关按钮（覆盖在圆心）
         self._ai_enabled = True
         self._ai_btn = QPushButton("AI", self)
-        self._ai_btn.setFixedSize(36, 36)
+        self._ai_btn.setFixedSize(28, 28)
         self._ai_btn.setCursor(Qt.PointingHandCursor)
         self._ai_btn.clicked.connect(self._toggle_ai)
         self._update_ai_btn_style()
@@ -321,8 +321,8 @@ class OverlayWindow(QWidget):
             self._ai_btn.setStyleSheet("""
                 QPushButton {
                     background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #7c3aed, stop:1 #2563eb);
-                    color: white; font-size: 10pt; font-weight: bold;
-                    border-radius: 18px; border: none;
+                    color: white; font-size: 9pt; font-weight: bold;
+                    border-radius: 14px; border: none;
                 }
             """)
             self._ai_btn.setToolTip("AI 润色已开启，点击关闭")
@@ -330,8 +330,8 @@ class OverlayWindow(QWidget):
             self._ai_btn.setStyleSheet("""
                 QPushButton {
                     background: #333; color: #888;
-                    font-size: 10pt; font-weight: bold;
-                    border-radius: 18px; border: 1px solid #555;
+                    font-size: 9pt; font-weight: bold;
+                    border-radius: 14px; border: 1px solid #555;
                 }
             """)
             self._ai_btn.setToolTip("AI 润色已关闭，点击开启")
@@ -354,7 +354,6 @@ class OverlayWindow(QWidget):
             by = (self.height() - self._ai_btn.height()) // 2
             self._ai_btn.move(bx, by)
             self._ai_btn.show()
-            self._ai_btn.raise_()
         else:
             self._ai_btn.hide()
 
