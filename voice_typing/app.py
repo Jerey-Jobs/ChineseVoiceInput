@@ -159,6 +159,7 @@ class VoiceTypingApp(QObject):
             prev = self._config.get("_prev_polish_model", "qwen")
             self._config["polish_model"] = prev
             print(f"[AI] 润色已开启: {prev}")
+            self._overlay.show_toast(f"AI 润色已开启 · {prev}")
         else:
             # 记住当前模型，切为 off
             current = self._config.get("polish_model", "qwen")
@@ -166,6 +167,7 @@ class VoiceTypingApp(QObject):
                 self._config["_prev_polish_model"] = current
             self._config["polish_model"] = "off"
             print("[AI] 润色已关闭")
+            self._overlay.show_toast("AI 润色已关闭")
         from voice_typing.core.config import save_config
         save_config(self._config)
 

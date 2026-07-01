@@ -60,6 +60,10 @@ class SiriGlowWidget(QWidget):
         self._phase += 0.04
         self._amplitude += (self._target_amplitude - self._amplitude) * 0.1
         self.update()
+        # 通知父窗口重绘（用于背景呼吸渐变随 phase 变化）
+        parent = self.parentWidget()
+        if parent is not None and hasattr(parent, '_idle') and parent._idle:
+            parent.update()
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -176,7 +180,7 @@ class OverlayWindow(QWidget):
         # AI 润色开关按钮（覆盖在圆心）
         self._ai_enabled = True
         self._ai_btn = QPushButton("AI", self)
-        self._ai_btn.setFixedSize(28, 28)
+        self._ai_btn.setFixedSize(32, 32)
         self._ai_btn.setCursor(Qt.PointingHandCursor)
         self._ai_btn.clicked.connect(self._toggle_ai)
         self._update_ai_btn_style()
@@ -235,19 +239,28 @@ class OverlayWindow(QWidget):
             r = min(self.width(), self.height()) / 2
             ai_on = getattr(self, '_ai_enabled', True)
             if ai_on:
-                # AI 开启：渐变彩色背景
-                bg = QRadialGradient(cx, cy, r)
-                bg.setColorAt(0, QColor(60, 20, 120, 220))
-                bg.setColorAt(0.6, QColor(30, 60, 150, 200))
-                bg.setColorAt(1, QColor(10, 20, 60, 240))
-                painter.setBrush(QBrush(bg))
+                # AI 开启：半透明白底 + 彩色渐变呼吸
+                painter.setBrush(QBrush(QColor(255, 255, 255, 160)))
+                painter.drawEllipse(QPointF(cx, cy), r, r)
+
+                colors = getattr(self._glow, '_colors', [])
+                phase = getattr(self._glow, '_phase', 0.0)
+                if colors:
+                    n = len(colors)
+                    idx1 = int(phase) % n
+                    idx2 = (idx1 + 1) % n
+                    c1 = colors[idx1]
+                    c2 = colors[idx2]
+                    bg = QRadialGradient(cx, cy, r)
+                    bg.setColorAt(0, QColor(c1.red(), c1.green(), c1.blue(), 90))
+                    bg.setColorAt(0.6, QColor(c2.red(), c2.green(), c2.blue(), 60))
+                    bg.setColorAt(1, QColor(c2.red(), c2.green(), c2.blue(), 0))
+                    painter.setBrush(QBrush(bg))
+                    painter.drawEllipse(QPointF(cx, cy), r, r)
             else:
-                # AI 关闭：纯深灰色
-                bg = QRadialGradient(cx, cy, r)
-                bg.setColorAt(0, QColor(40, 40, 40, 220))
-                bg.setColorAt(1, QColor(20, 20, 20, 240))
-                painter.setBrush(QBrush(bg))
-            painter.drawEllipse(QPointF(cx, cy), r, r)
+                # AI 关闭：更淡的半透明白色
+                painter.setBrush(QBrush(QColor(255, 255, 255, 120)))
+                painter.drawEllipse(QPointF(cx, cy), r, r)
         else:
             painter.setBrush(QBrush(QColor(15, 15, 15, 220)))
             painter.drawRoundedRect(self.rect(), 24, 24)
@@ -312,9 +325,60 @@ class OverlayWindow(QWidget):
         """切换 AI 润色开关"""
         self._ai_enabled = not self._ai_enabled
         self._update_ai_btn_style()
+        if self._ai_enabled:
+            self._glow.start()
+        else:
+            self._glow.stop()
+        self.update()  # 重绘背景
         # 通知 app 更新配置
         if hasattr(self, '_on_ai_toggle') and self._on_ai_toggle:
             self._on_ai_toggle(self._ai_enabled)
+
+    def show_toast(self, text: str, duration_ms: int = 3000):
+        """在浮窗上方弹出一个黑底白字提示，几秒后自动消失（独立顶层窗口，避免被裁剪）"""
+        if not hasattr(self, '_toast_win') or self._toast_win is None:
+            self._toast_win = QWidget(None)
+            self._toast_win.setWindowFlags(
+                Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool
+            )
+            self._toast_win.setAttribute(Qt.WA_TranslucentBackground)
+            self._toast_win.setAttribute(Qt.WA_ShowWithoutActivating)
+            _layout = QVBoxLayout(self._toast_win)
+            _layout.setContentsMargins(0, 0, 0, 0)
+            self._toast_label = QLabel(self._toast_win)
+            self._toast_label.setStyleSheet("""
+                QLabel {
+                    background: rgba(20, 20, 20, 235);
+                    color: #ffffff;
+                    border: 1px solid rgba(255, 255, 255, 60);
+                    border-radius: 10px;
+                    padding: 6px 12px;
+                    font-size: 9pt;
+                    font-weight: 500;
+                }
+            """)
+            self._toast_label.setAlignment(Qt.AlignCenter)
+            _layout.addWidget(self._toast_label)
+
+        self._toast_label.setText(text)
+        self._toast_win.adjustSize()
+
+        # 定位在浮窗正上方居中（用屏幕绝对坐标）
+        self_geo = self.geometry()
+        tw = self._toast_win.width()
+        th = self._toast_win.height()
+        tx = self_geo.x() + (self_geo.width() - tw) // 2
+        ty = self_geo.y() - th - 10
+        self._toast_win.move(tx, ty)
+        self._toast_win.show()
+        self._toast_win.raise_()
+
+        if not hasattr(self, '_toast_timer') or self._toast_timer is None:
+            self._toast_timer = QTimer(self)
+            self._toast_timer.setSingleShot(True)
+            self._toast_timer.timeout.connect(lambda: self._toast_win.hide())
+        self._toast_timer.stop()
+        self._toast_timer.start(duration_ms)
 
     def _update_ai_btn_style(self):
         if self._ai_enabled:
@@ -322,7 +386,8 @@ class OverlayWindow(QWidget):
                 QPushButton {
                     background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #7c3aed, stop:1 #2563eb);
                     color: white; font-size: 9pt; font-weight: bold;
-                    border-radius: 14px; border: none;
+                    border-radius: 16px; border: none;
+                    padding: 0px; margin: 0px;
                 }
             """)
             self._ai_btn.setToolTip("AI 润色已开启，点击关闭")
@@ -331,7 +396,8 @@ class OverlayWindow(QWidget):
                 QPushButton {
                     background: #333; color: #888;
                     font-size: 9pt; font-weight: bold;
-                    border-radius: 14px; border: 1px solid #555;
+                    border-radius: 16px; border: 1px solid #555;
+                    padding: 0px; margin: 0px;
                 }
             """)
             self._ai_btn.setToolTip("AI 润色已关闭，点击开启")
@@ -356,23 +422,6 @@ class OverlayWindow(QWidget):
             self._ai_btn.show()
         else:
             self._ai_btn.hide()
-
-    def _toggle_ai(self):
-        """切换 AI 润色开关"""
-        self._ai_enabled = not getattr(self, '_ai_enabled', True)
-        if self._ai_enabled:
-            self._glow.start()
-        else:
-            self._glow.stop()
-        self.update()  # 重绘背景
-        if hasattr(self, '_on_ai_toggle') and self._on_ai_toggle:
-            self._on_ai_toggle(self._ai_enabled)
-
-    def set_ai_toggle_callback(self, callback):
-        self._on_ai_toggle = callback
-
-    def set_ai_enabled(self, enabled):
-        self._ai_enabled = enabled
 
     def reset(self):
         """重置到待机状态：根据 AI 开关恢复对应效果"""
