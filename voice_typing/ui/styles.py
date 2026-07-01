@@ -92,10 +92,15 @@ QComboBox::drop-down {
     subcontrol-position: center right;
     width: 28px;
     border: none;
+    border-left: 1px solid #333;
 }
 QComboBox::down-arrow {
-    width: 14px;
-    height: 14px;
+    image: none;
+    width: 0;
+    height: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 6px solid #888;
 }
 /* 下拉弹出层 — 容器 + 视图 */
 QComboBox QAbstractItemView,
