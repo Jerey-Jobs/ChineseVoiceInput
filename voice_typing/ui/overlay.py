@@ -76,47 +76,31 @@ class SiriGlowWidget(QWidget):
             self._draw_spinning_ring(painter, cx, cy)
 
     def _draw_spinning_ring(self, painter, cx, cy):
-        """待机：渐变彩色底色 + 旋转圆点"""
-        radius = 14
-        dot_radius = 3.5
+        """待机：旋转圆点绕外圈，中心留空给 AI 文字"""
+        radius = 20
+        dot_radius = 3.0
         n = len(self._colors)
 
-        # 渐变底色圆，颜色随 phase 变化
-        idx1 = int(self._phase) % n
-        idx2 = (idx1 + 1) % n
-        t = self._phase - int(self._phase)
-        c1 = self._colors[idx1]
-        c2 = self._colors[idx2]
-        bg_gradient = QRadialGradient(cx, cy, 28)
-        gc1 = QColor(c1.red(), c1.green(), c1.blue(), 140)
-        gc2 = QColor(c2.red(), c2.green(), c2.blue(), 70)
-        bg_gradient.setColorAt(0, gc1)
-        bg_gradient.setColorAt(0.6, gc2)
-        bg_gradient.setColorAt(1, QColor(0, 0, 0, 0))
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(QBrush(bg_gradient))
-        painter.drawEllipse(QPointF(cx, cy), 28, 28)
-
-        # 旋转圆点 + 拖尾光晕
+        # 只画旋转圆点，不画渐变底色（避免遮挡中心 AI 文字）
         for i, color in enumerate(self._colors):
             angle = self._phase * 3 + i * (2 * math.pi / n)
             x = cx + radius * math.cos(angle)
             y = cy + radius * math.sin(angle)
             # 光晕
-            glow = QRadialGradient(x, y, 6)
+            glow = QRadialGradient(x, y, 5)
             gc = QColor(color)
-            gc.setAlpha(120)
+            gc.setAlpha(100)
             glow.setColorAt(0, gc)
             glow.setColorAt(1, QColor(color.red(), color.green(), color.blue(), 0))
             painter.setPen(Qt.NoPen)
             painter.setBrush(QBrush(glow))
-            painter.drawEllipse(QPointF(x, y), 6, 6)
+            painter.drawEllipse(QPointF(x, y), 5, 5)
             # 实心圆点
             alpha = 255 - i * 25
             c = QColor(color)
             c.setAlpha(max(alpha, 100))
             painter.setBrush(QBrush(c))
-            r = 4.0 - i * 0.3
+            r = dot_radius - i * 0.2
             painter.drawEllipse(QPointF(x, y), r, r)
 
     def _draw_waves(self, painter, w, h, cx, cy):
