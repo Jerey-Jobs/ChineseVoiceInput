@@ -1,6 +1,8 @@
 """阿里云 Paraformer 实时语音识别引擎"""
 
 import queue
+import threading
+import time
 import dashscope
 from dashscope.audio.asr import Recognition, RecognitionCallback
 
@@ -10,14 +12,19 @@ from voice_typing.engine.base import BaseEngine
 class ParaformerCallback(RecognitionCallback):
     """接收实时识别结果"""
 
-    def __init__(self):
+    def __init__(self, on_open=None):
         super().__init__()
         self.final_text = ""
         self._sentences = []  # 累积所有句子
         self._on_text = None
+        self._on_open_cb = on_open
 
     def set_on_text(self, callback):
         self._on_text = callback
+
+    def on_open(self):
+        if self._on_open_cb:
+            self._on_open_cb()
 
     def on_event(self, result):
         sentence = result.get_sentence()
@@ -73,7 +80,14 @@ class AlibabaEngine(BaseEngine):
         self._phrase_id = phrase_id
 
     def start(self):
-        self._callback = ParaformerCallback()
+        self._ws_ready = threading.Event()
+        _t0 = time.time()
+
+        def _on_open():
+            print(f"[ASR] WebSocket 已连接 (阿里云): +{time.time() - _t0:.3f}s")
+            self._ws_ready.set()
+
+        self._callback = ParaformerCallback(on_open=_on_open)
         self._queue = queue.Queue()
         self._running = True
 

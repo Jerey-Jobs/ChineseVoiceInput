@@ -63,6 +63,38 @@ class VoiceTypingApp(QObject):
         self._overlay.set_ai_enabled(polish_model != "off")
         self._overlay.show()
 
+        # 启动麦克风保活流：避免 PulseAudio/ALSA 因设备 IDLE 而挂起（SUSPENDED），
+        # 挂起后重新唤醒会产生 1-2 秒满幅削波噪声，淹没录音开头的说话内容。
+        self._start_mic_keepalive()
+
+    def _start_mic_keepalive(self):
+        """常驻打开一个静默的麦克风输入流，让 PulseAudio 保持设备为 RUNNING 状态"""
+        import threading
+
+        def _keepalive_loop():
+            import pyaudio
+            try:
+                p = pyaudio.PyAudio()
+                stream = p.open(
+                    format=pyaudio.paInt16,
+                    channels=1,
+                    rate=16000,
+                    input=True,
+                    frames_per_buffer=3200,
+                )
+                print("[保活] 麦克风保活流已启动，设备将保持唤醒状态")
+                while True:
+                    try:
+                        stream.read(3200, exception_on_overflow=False)
+                    except Exception as e:
+                        print(f"[保活] 读取异常: {e}")
+                        break
+            except Exception as e:
+                print(f"[保活] 麦克风保活流启动失败: {e}")
+
+        self._mic_keepalive_thread = threading.Thread(target=_keepalive_loop, daemon=True)
+        self._mic_keepalive_thread.start()
+
     def _create_engine(self):
         engine_type = self._config.get("engine", "alibaba")
         if engine_type == "alibaba":
