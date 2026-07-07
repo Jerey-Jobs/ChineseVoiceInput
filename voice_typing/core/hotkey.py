@@ -6,8 +6,13 @@ import time
 import pynput.keyboard as keyboard
 
 
-def _norm(key):
-    """将左右修饰键归一化为通用形式"""
+def _norm(key, distinguish_lr=False):
+    """将左右修饰键归一化为通用形式。
+
+    distinguish_lr=True 时保留左右区分（用于配置了 ctrl_l/alt_r 等具体键的场景）。
+    """
+    if distinguish_lr:
+        return key
     if key in (keyboard.Key.ctrl_l, keyboard.Key.ctrl_r):
         return keyboard.Key.ctrl
     if key in (keyboard.Key.alt_l, keyboard.Key.alt_r):
@@ -24,6 +29,12 @@ def _key_to_str(key):
         keyboard.Key.alt: "alt",
         keyboard.Key.shift: "shift",
         keyboard.Key.cmd: "super",
+        keyboard.Key.ctrl_l: "ctrl_l",
+        keyboard.Key.ctrl_r: "ctrl_r",
+        keyboard.Key.alt_l: "alt_l",
+        keyboard.Key.alt_r: "alt_r",
+        keyboard.Key.shift_l: "shift_l",
+        keyboard.Key.shift_r: "shift_r",
     }
     if hasattr(key, "char") and key.char:
         return key.char.lower()
@@ -41,6 +52,12 @@ def _str_to_key(s):
         "alt": keyboard.Key.alt,
         "shift": keyboard.Key.shift,
         "super": keyboard.Key.cmd,
+        "ctrl_l": keyboard.Key.ctrl_l,
+        "ctrl_r": keyboard.Key.ctrl_r,
+        "alt_l": keyboard.Key.alt_l,
+        "alt_r": keyboard.Key.alt_r,
+        "shift_l": keyboard.Key.shift_l,
+        "shift_r": keyboard.Key.shift_r,
     }
     if s in mapping:
         return mapping[s]
@@ -51,6 +68,11 @@ def _str_to_key(s):
     except AttributeError:
         pass
     return keyboard.KeyCode.from_char(s)
+
+
+def _is_lr_specific(s):
+    """判断快捷键字符串是否是左右区分的具体键（如 alt_l/ctrl_r）"""
+    return s in ("ctrl_l", "ctrl_r", "alt_l", "alt_r", "shift_l", "shift_r")
 
 
 class HotkeyManager:
@@ -90,6 +112,7 @@ class HotkeyManager:
         self._paused = False
         self._stale_timer_running = False
         self._mode = mode
+        self._distinguish_lr = False  # 是否区分左右修饰键（配置了 alt_l/alt_r 等时为 True）
 
         # 双击模式状态
         self._last_tap_time = 0
@@ -104,6 +127,8 @@ class HotkeyManager:
         keys = frozenset(_str_to_key(s) for s in hotkey_list)
         self._hotkey_set = keys
         self._is_long_press = len(hotkey_list) == 1
+        # 若配置中包含左右区分的具体键（如 alt_r），则不对按键做左右归一化
+        self._distinguish_lr = any(_is_lr_specific(s) for s in hotkey_list)
         self._clear_state()
 
     def set_mode(self, mode):
@@ -248,7 +273,7 @@ class HotkeyManager:
 
     def _on_press(self, key):
         with self._lock:
-            k = _norm(key)
+            k = _norm(key, self._distinguish_lr)
             if k in self._keys:
                 return
             self._keys.add(k)
@@ -274,7 +299,7 @@ class HotkeyManager:
 
     def _on_release(self, key):
         with self._lock:
-            k = _norm(key)
+            k = _norm(key, self._distinguish_lr)
             self._keys.discard(k)
             self._press_times.pop(k, None)
 
@@ -315,18 +340,19 @@ class HotkeyManager:
 
     @staticmethod
     def record_key_sequence(on_done):
-        """录制快捷键组合（用于设置界面）"""
+        """录制快捷键组合（用于设置界面）。保留左右区分，用户按右 Alt 录制出的就是 alt_r。"""
         recorded = set()
         done = threading.Event()
 
         KEY_ORDER = {
-            keyboard.Key.ctrl: 0, keyboard.Key.alt: 1,
-            keyboard.Key.shift: 2, keyboard.Key.cmd: 3,
+            keyboard.Key.ctrl: 0, keyboard.Key.ctrl_l: 0, keyboard.Key.ctrl_r: 0,
+            keyboard.Key.alt: 1, keyboard.Key.alt_l: 1, keyboard.Key.alt_r: 1,
+            keyboard.Key.shift: 2, keyboard.Key.shift_l: 2, keyboard.Key.shift_r: 2,
+            keyboard.Key.cmd: 3,
         }
 
         def on_press(key):
-            k = _norm(key)
-            recorded.add(k)
+            recorded.add(key)  # 不归一化，保留左右区分
 
         def on_release(key):
             threading.Timer(0.15, _check_done).start()
