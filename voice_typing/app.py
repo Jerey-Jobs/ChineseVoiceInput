@@ -112,6 +112,7 @@ class VoiceTypingApp(QObject):
                 resource_id=self._config.get("volc_resource_id", ""),
                 api_key=self._config.get("volc_api_key", ""),
                 hotword_id=self._config.get("volc_hotword_id", ""),
+                replace_word_id=self._config.get("volc_replace_word_id", ""),
             )
         else:
             self._engine = AlibabaEngine(
@@ -143,6 +144,7 @@ class VoiceTypingApp(QObject):
         self._overlay.start_recording()
         self._recorder = Recorder(self._engine, app_obj=self)
         self._recorder.text_update.connect(self._overlay.update_text)
+        self._recorder.volume_update.connect(self._overlay.set_volume_level)
         self._recorder.start()
         print(f"[时序] Recorder.start() 完成: +{(time.time() - self._recording_start_time)*1000:.0f}ms")
         # 超时自动停止

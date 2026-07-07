@@ -58,12 +58,13 @@ class VolcengineEngine(BaseEngine):
 
     name = "火山引擎 BigModel ASR"
 
-    def __init__(self, app_id: str = "", access_token: str = "", hotwords: list = None, resource_id: str = "", api_key: str = "", hotword_id: str = ""):
+    def __init__(self, app_id: str = "", access_token: str = "", hotwords: list = None, resource_id: str = "", api_key: str = "", hotword_id: str = "", replace_word_id: str = ""):
         self._app_id = app_id
         self._access_token = access_token
         self._api_key = api_key  # 新版认证（单 key）
         self._hotwords = hotwords or []
         self._hotword_id = hotword_id  # 云端热词表 ID
+        self._replace_word_id = replace_word_id  # 云端替换词表 ID
         self._resource_id = resource_id or RESOURCE_ID
         self._running = False
         self._audio_queue = None
@@ -142,8 +143,11 @@ class VolcengineEngine(BaseEngine):
                 if self._hotwords:
                     config["request"]["hotwords"] = self._hotwords
                 if self._hotword_id:
-                    config["request"]["hotword_id"] = self._hotword_id
-                    print(f"[ASR] 云端热词ID: {self._hotword_id}")
+                    config["request"]["boosting_table_id"] = self._hotword_id
+                    print(f"[ASR] 云端热词ID(boosting_table_id): {self._hotword_id}")
+                if self._replace_word_id:
+                    config["request"]["correct_table_id"] = self._replace_word_id
+                    print(f"[ASR] 云端替换词ID(correct_table_id): {self._replace_word_id}")
                 payload = json.dumps(config).encode()
                 await ws.send(_build_frame(HDR_CONFIG, payload))
                 import time as _t
@@ -180,12 +184,16 @@ class VolcengineEngine(BaseEngine):
                         text, is_final = _parse_response(msg)
                         if not text:
                             continue
+                        print(f"[ASR] 收到帧: is_final={is_final}, text={text!r}")
                         if is_final:
                             # 去重：避免两遍识别返回相同句子
                             if text not in final_parts:
                                 final_parts.append(text)
+                            else:
+                                print(f"[ASR] 检测到重复句子，已跳过: {text!r}")
                             self._final_text = "".join(final_parts)
                             preview = self._final_text
+                            print(f"[ASR] final_parts={final_parts!r}")
                         else:
                             preview = "".join(final_parts) + text
                         if self._text_callback:
