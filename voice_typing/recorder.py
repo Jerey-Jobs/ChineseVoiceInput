@@ -15,6 +15,7 @@ class Recorder(QObject):
 
     text_update = pyqtSignal(str)
     recording_done = pyqtSignal(str)
+    volume_update = pyqtSignal(float)  # 实时音量 0.0~1.0
 
     def __init__(self, engine, app_obj=None):
         super().__init__()
@@ -72,26 +73,35 @@ class Recorder(QObject):
 
         frame_idx = 0
         clip_streak = 0  # 连续削波帧计数（用于识别启动瞬态）
+        import array
         while self._recording:
             try:
                 data = stream.read(CHUNK_SIZE, exception_on_overflow=False)
                 if frame_idx < 3:
                     print(f"[录音] 采集第 {frame_idx} 帧, t=+{_t.time()-_t0:.3f}s, bytes={len(data)}")
 
+                samples = array.array('h')
+                samples.frombytes(data)
+
                 # 检测麦克风启动瞬态削波噪声（前几帧常见的满幅爆音）
                 # 只在录音刚开始的前 10 帧内检测，避免误杀正常大音量说话
                 if frame_idx < 10:
-                    import array
-                    samples = array.array('h')
-                    samples.frombytes(data)
                     clipped = sum(1 for s in samples if abs(s) >= 32750)
                     clip_ratio = clipped / max(len(samples), 1)
                     if clip_ratio > 0.95:
                         clip_streak += 1
                         print(f"[录音] 帧 {frame_idx} 检测到削波噪声 ({clip_ratio*100:.0f}%)，替换为静音")
                         data = b'\x00' * len(data)
+                        samples = array.array('h', data)
                     else:
                         clip_streak = 0
+
+                # 计算 RMS 音量并发出信号，驱动浮窗波浪动画随真实声音起伏
+                if samples:
+                    rms = (sum(s * s for s in samples) / len(samples)) ** 0.5
+                    # 16bit 满幅约 32768，用对数感知映射到 0~1 更符合人耳感受
+                    level = min(1.0, rms / 4000.0)
+                    self.volume_update.emit(level)
 
                 frame_idx += 1
                 debug_file.write(data)

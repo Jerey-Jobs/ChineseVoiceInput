@@ -40,10 +40,16 @@ class SiriGlowWidget(QWidget):
 
     def start(self):
         self._mode = self.MODE_RECORDING
-        self._target_amplitude = 0.8
+        self._target_amplitude = 0.3  # 基础幅度，真实音量到来后会覆盖
         if not self._timer.isActive():
             self._timer.start(16)
         self.show()
+
+    def set_volume_level(self, level: float):
+        """接收 0.0~1.0 的实时音量，驱动波浪振幅"""
+        if self._mode == self.MODE_RECORDING:
+            # 映射到合理的振幅范围，避免过静时波浪完全消失或过响时溢出
+            self._target_amplitude = max(0.15, min(1.0, level))
 
     def stop(self):
         self._mode = self.MODE_IDLE
@@ -281,6 +287,10 @@ class OverlayWindow(QWidget):
     def stop_recording(self):
         """停止录音：光晕渐隐"""
         self._glow.stop()
+
+    def set_volume_level(self, level: float):
+        """接收实时麦克风音量（0.0~1.0），驱动波浪振幅"""
+        self._glow.set_volume_level(level)
 
     MAX_LABEL_WIDTH = 600
 
