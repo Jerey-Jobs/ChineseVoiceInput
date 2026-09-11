@@ -5,7 +5,7 @@ import random
 from PyQt5.QtCore import Qt, QTimer, QRect, QPropertyAnimation, QEasingCurve, QPointF
 from PyQt5.QtGui import (
     QPainter, QColor, QBrush, QPen, QLinearGradient, QRadialGradient,
-    QFontMetrics, QPainterPath
+    QFontMetrics, QPainterPath, QCursor
 )
 from PyQt5.QtWidgets import QWidget, QLabel, QHBoxLayout, QVBoxLayout, QApplication, QPushButton
 
@@ -183,14 +183,21 @@ class OverlayWindow(QWidget):
         self._glow = SiriGlowWidget()
         self._text_received = False
 
-        # AI 润色开关按钮（覆盖在圆心）
+        # AI 润色开关按钮（覆盖在圆心）：单击切换开关，长按（0.6s）优化剪贴板内容
         self._ai_enabled = True
         self._ai_btn = QPushButton("AI", self)
         self._ai_btn.setFixedSize(32, 32)
         self._ai_btn.setCursor(Qt.PointingHandCursor)
         self._ai_btn.setFocusPolicy(Qt.NoFocus)
-        self._ai_btn.clicked.connect(self._toggle_ai)
         self._update_ai_btn_style()
+
+        self._ai_long_press_triggered = False
+        self._ai_long_press_timer = QTimer(self)
+        self._ai_long_press_timer.setSingleShot(True)
+        self._ai_long_press_timer.setInterval(600)
+        self._ai_long_press_timer.timeout.connect(self._on_ai_long_press)
+        self._ai_btn.pressed.connect(self._on_ai_btn_pressed)
+        self._ai_btn.released.connect(self._on_ai_btn_released)
 
         self._text_label = QLabel("")
         self._text_label.setStyleSheet(
@@ -230,9 +237,14 @@ class OverlayWindow(QWidget):
         self._size_animation.start()
 
     def _center_on_screen(self):
-        screen = QApplication.primaryScreen().availableGeometry()
-        x = (screen.width() - self.width()) // 2
-        y = screen.bottom() - self.height() - 80
+        # 多屏环境下 primaryScreen() 的 availableGeometry 可能与实际可见区域不一致
+        # （尤其是旋转屏幕），改用光标当前所在屏幕来定位，更符合用户预期
+        screen = QApplication.screenAt(QCursor.pos())
+        if screen is None:
+            screen = QApplication.primaryScreen()
+        geo = screen.availableGeometry()
+        x = geo.x() + (geo.width() - self.width()) // 2
+        y = geo.y() + geo.height() - self.height() - 80
         self.move(x, y)
 
     def paintEvent(self, event):
@@ -344,6 +356,32 @@ class OverlayWindow(QWidget):
         # 通知 app 更新配置
         if hasattr(self, '_on_ai_toggle') and self._on_ai_toggle:
             self._on_ai_toggle(self._ai_enabled)
+
+    def _on_ai_btn_pressed(self):
+        """AI 按钮按下：启动长按计时器"""
+        print("[AI球] 按下")
+        self._ai_long_press_triggered = False
+        self._ai_long_press_timer.start()
+
+    def _on_ai_btn_released(self):
+        """AI 按钮松开：若长按已触发则不再执行单击切换，否则视为单击"""
+        print(f"[AI球] 松开, long_press_triggered={self._ai_long_press_triggered}")
+        self._ai_long_press_timer.stop()
+        if not self._ai_long_press_triggered:
+            self._toggle_ai()
+
+    def _on_ai_long_press(self):
+        """长按 0.6 秒触发：优化当前剪贴板内容"""
+        print("[AI球] 长按触发!")
+        self._ai_long_press_triggered = True
+        if hasattr(self, '_on_ai_double_click_cb') and self._on_ai_double_click_cb:
+            self._on_ai_double_click_cb()
+        else:
+            print("[AI球] 回调未设置")
+
+    def set_ai_double_click_callback(self, callback):
+        """设置长按回调（供 app.py 注入优化剪贴板逻辑）"""
+        self._on_ai_double_click_cb = callback
 
     def show_toast(self, text: str, duration_ms: int = 3000):
         """在浮窗上方弹出一个黑底白字提示，几秒后自动消失（独立顶层窗口，避免被裁剪）"""

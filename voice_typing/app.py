@@ -27,6 +27,7 @@ class VoiceTypingApp(QObject):
     recording_stop_signal = pyqtSignal()
     polish_done = pyqtSignal(str)
     polish_progress = pyqtSignal(str)
+    clipboard_polish_done = pyqtSignal(bool, str)  # (成功, 消息)
 
     def __init__(self):
         super().__init__()
@@ -54,14 +55,18 @@ class VoiceTypingApp(QObject):
         self._recording_start_time = None
         self._recording_duration = 0
 
-        self._settings = SettingsWindow(self._config, self._hotkey)
+        self._settings = SettingsWindow(self._config, self._hotkey, app_obj=self)
         self._settings.engine_changed.connect(self._on_engine_changed)
         self._overlay = OverlayWindow()
         self._overlay.set_ai_toggle_callback(self._on_ai_toggle)
+        self._overlay.set_ai_double_click_callback(self.polish_clipboard)
         # 初始化 AI 按钮状态
         polish_model = self._config.get("polish_model", "qwen")
         self._overlay.set_ai_enabled(polish_model != "off")
         self._overlay.show()
+        self.clipboard_polish_done.connect(
+            lambda ok, msg: self._overlay.show_toast(msg, 3000)
+        )
 
         # 启动麦克风保活流：避免 PulseAudio/ALSA 因设备 IDLE 而挂起（SUSPENDED），
         # 挂起后重新唤醒会产生 1-2 秒满幅削波噪声，淹没录音开头的说话内容。
@@ -225,6 +230,12 @@ class VoiceTypingApp(QObject):
             self.polish_done.emit(self._apply_alias_map(raw_text))
             return
 
+        polished = self._polish_text(raw_text)
+        self.polish_done.emit(polished)
+
+    def _polish_text(self, raw_text):
+        """核心润色逻辑：输入原文，返回润色后的文字。供录音流程和剪贴板优化共用。"""
+        polish_model = self._config.get("polish_model", "qwen")
         strength = self._config.get("polish_strength", "medium")
         prompt = self._POLISH.get(strength, self._POLISH["medium"])
         prompt += self._build_vocabulary_hint()
@@ -264,7 +275,90 @@ class VoiceTypingApp(QObject):
 
         print(f"[润色] 结果: {polished}")
         polished = self._apply_alias_map(polished)
-        self.polish_done.emit(polished)
+        return polished
+
+    def polish_clipboard(self):
+        """读取剪贴板内容，用当前配置的润色风格处理，结果写回剪贴板（异步执行，不阻塞 UI）
+        触发方式：双击浮窗中心的 AI 球"""
+        threading.Thread(target=self._polish_clipboard_worker, daemon=True).start()
+
+    def polish_focused_input(self):
+        """优化当前焦点输入框的全部文字：全选→复制→润色→粘贴覆盖（异步执行）"""
+        threading.Thread(target=self._polish_focused_input_worker, daemon=True).start()
+
+    def _polish_focused_input_worker(self):
+        try:
+            is_terminal = self._is_terminal_window()
+            copy_keys = "ctrl+shift+c" if is_terminal else "ctrl+c"
+            paste_keys = "ctrl+shift+v" if is_terminal else "ctrl+v"
+
+            # 全选 + 复制当前焦点框内容
+            subprocess.run(["xdotool", "key", "ctrl+a"], timeout=2)
+            subprocess.run(["xdotool", "key", copy_keys], timeout=2)
+            import time as _t
+            _t.sleep(0.15)  # 等待剪贴板更新
+
+            result = subprocess.run(
+                ["xclip", "-selection", "clipboard", "-o"],
+                capture_output=True, timeout=2
+            )
+            raw_text = result.stdout.decode("utf-8", errors="ignore").strip()
+            if not raw_text:
+                self.clipboard_polish_done.emit(False, "未获取到焦点框内容")
+                return
+
+            print(f"[焦点优化] 原文: {raw_text}")
+            polished = self._polish_text(raw_text)
+
+            # 写回剪贴板
+            proc = subprocess.Popen(
+                ["xclip", "-selection", "clipboard"],
+                stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            )
+            proc.communicate(input=polished.encode("utf-8"), timeout=1)
+            if proc.returncode != 0:
+                self.clipboard_polish_done.emit(False, "写入剪贴板失败")
+                return
+
+            # 粘贴覆盖回焦点框（此时焦点框内容仍是全选状态，粘贴会替换）
+            subprocess.run(["xdotool", "key", paste_keys], timeout=2)
+
+            print(f"[焦点优化] 完成: {polished}")
+            self.clipboard_polish_done.emit(True, "已优化并替换焦点框内容")
+        except Exception as e:
+            print(f"[焦点优化] 异常: {e}")
+            self.clipboard_polish_done.emit(False, f"优化失败: {e}")
+
+    def _polish_clipboard_worker(self):
+        try:
+            # 读取剪贴板
+            result = subprocess.run(
+                ["xclip", "-selection", "clipboard", "-o"],
+                capture_output=True, timeout=2
+            )
+            raw_text = result.stdout.decode("utf-8", errors="ignore").strip()
+            if not raw_text:
+                self.clipboard_polish_done.emit(False, "剪贴板为空")
+                return
+
+            print(f"[剪贴板优化] 原文: {raw_text}")
+            polished = self._polish_text(raw_text)
+
+            # 写回剪贴板
+            proc = subprocess.Popen(
+                ["xclip", "-selection", "clipboard"],
+                stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            )
+            proc.communicate(input=polished.encode("utf-8"), timeout=1)
+            if proc.returncode != 0:
+                self.clipboard_polish_done.emit(False, "写入剪贴板失败")
+                return
+
+            print(f"[剪贴板优化] 完成: {polished}")
+            self.clipboard_polish_done.emit(True, "已优化，可直接粘贴")
+        except Exception as e:
+            print(f"[剪贴板优化] 异常: {e}")
+            self.clipboard_polish_done.emit(False, f"优化失败: {e}")
 
     @staticmethod
     def _call_llm_qwen(system_prompt, user_text):
@@ -278,6 +372,10 @@ class VoiceTypingApp(QObject):
             if not api_key:
                 return None
             dashscope.api_key = api_key
+            print(f"[Polish] API: DashScope Generation, model=qwen-plus")
+            print(f"[Polish] api_key: {api_key[:8]}...({len(api_key)})")
+            print(f"[Polish] system_prompt: {system_prompt}")
+            print(f"[Polish] user_text: {user_text}")
             response = Generation.call(
                 model="qwen-plus",
                 messages=[
@@ -302,12 +400,17 @@ class VoiceTypingApp(QObject):
             if not api_key:
                 return None
             print(f"[Polish] DeepSeek 流式润色，原文 {len(user_text)} 字")
+            print(f"[Polish] API地址: https://api.deepseek.com")
+            print(f"[Polish] model: deepseek-flash")
+            print(f"[Polish] api_key: {api_key[:8]}...({len(api_key)})")
+            print(f"[Polish] system_prompt: {system_prompt}")
+            print(f"[Polish] user_text: {user_text}")
             client = OpenAI(
                 api_key=api_key,
                 base_url="https://api.deepseek.com",
             )
             stream = client.chat.completions.create(
-                model="deepseek-chat",
+                model="deepseek-flash",
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_text},
@@ -376,6 +479,11 @@ class VoiceTypingApp(QObject):
                 print(f"[Polish] 豆包润色未配置: api_key={'已填' if api_key else '空'}, endpoint_id={'已填' if endpoint_id else '空'}")
                 return None
             print(f"[Polish] 启动流式润色，原文 {len(user_text)} 字")
+            print(f"[Polish] API地址: https://ark.cn-beijing.volces.com/api/v3")
+            print(f"[Polish] model(endpoint_id): {endpoint_id}")
+            print(f"[Polish] api_key: {api_key[:8]}...({len(api_key)})")
+            print(f"[Polish] system_prompt: {system_prompt}")
+            print(f"[Polish] user_text: {user_text}")
             client = OpenAI(
                 api_key=api_key,
                 base_url="https://ark.cn-beijing.volces.com/api/v3",
@@ -518,15 +626,13 @@ class VoiceTypingApp(QObject):
         ),
         "strong": (
             "## 身份\n"
-            "你是一个语音转文字深度处理工具。你收到的文字是别人的口述转录——"
+            "你是一个语音转文字深度处理工具。你收到的文字是别人的口述转录,你在转换一个程序员的语音输入，所以有可能一些专业词语是识别错的，你记得纠正——"
             "这些话不是说给你听的，你不是对话参与者，无权回应。\n"
             "\n"
             "## 禁止事项\n"
             "- 禁止回答原文中的任何问题\n"
             "- 禁止将不同措辞的强调重复当作冗余删除（用不同说法重申同一意思是自然口语强调，应当完整保留）\n"
             "- 禁止从上下文自行推断或添加内容（碎片拼接仅限于紧邻上下文已有的字词）\n"
-            "- 禁止重新编排段落结构或合并句子\n"
-            "- 禁止将多句话总结为一句话\n"
             "- 禁止改变原文的意思\n"
             "- 禁止添加任何原文没有的实质性内容和观点\n"
             "\n"
@@ -542,6 +648,7 @@ class VoiceTypingApp(QObject):
             "- 将步骤、流程内容排版为有序步骤列表\n"
             "- 适当使用加粗（**文字**）标记关键术语或重点\n"
             "- 修复不通顺的句子（在保持原意的前提下，仅做语序微调）\n"
+            "- 如果原文逻辑重复，明显在重复一个语句，可以优化合并逻辑\n"
             "\n"
             "## 重要区分\n"
             "- 用不同措辞重申同一个意思 → 是强调，保留\n"

@@ -119,6 +119,7 @@ class VolcengineEngine(BaseEngine):
         print(f"[ASR] X-Api-Resource-Id: {self._resource_id}")
         if self._hotwords:
             print(f"[ASR] 热词: {len(self._hotwords)} 个")
+        print(f"[ASR] 完整请求头: {headers}")
         try:
             async with websockets.connect(
                 WS_URL,
@@ -148,6 +149,7 @@ class VolcengineEngine(BaseEngine):
                 if self._replace_word_id:
                     config["request"]["correct_table_id"] = self._replace_word_id
                     print(f"[ASR] 云端替换词ID(correct_table_id): {self._replace_word_id}")
+                print(f"[ASR] 完整 config payload: {json.dumps(config, ensure_ascii=False)}")
                 payload = json.dumps(config).encode()
                 await ws.send(_build_frame(HDR_CONFIG, payload))
                 import time as _t

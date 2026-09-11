@@ -93,6 +93,8 @@ class AlibabaEngine(BaseEngine):
 
         print(f"[ASR] 引擎: 阿里云 Paraformer-realtime-v2")
         print(f"[ASR] API: DashScope SDK (wss://dashscope.aliyuncs.com)")
+        print(f"[ASR] model=paraformer-realtime-v2, format=pcm, sample_rate=16000")
+        print(f"[ASR] enable_punctuation_prediction=True, enable_inverse_text_normalization=True")
 
         self._recognition = Recognition(
             model="paraformer-realtime-v2",
