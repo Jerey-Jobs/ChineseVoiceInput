@@ -1,3 +1,8 @@
+# 凭证/密钥文件（切勿提交）
+client_secret*.json
+*credentials*.json
+google_token.json
+
 # Python
 __pycache__/
 *.py[cod]
@@ -38,3 +43,6 @@ models/
 
 # 日志
 *.log
+
+# 打包构建产物
+*.deb

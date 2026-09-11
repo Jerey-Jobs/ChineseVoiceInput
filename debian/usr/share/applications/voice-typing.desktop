@@ -1,8 +1,8 @@
 [Desktop Entry]
 Version=1.0
 Type=Application
-Name=VoiceType
-Name[zh_CN]=语音转文字
+Name=个人语音工作助手
+Name[zh_CN]=个人语音工作助手
 Comment=Real-time voice to text application
 Comment[zh_CN]=实时语音转文字应用
 Exec=/usr/bin/voice-typing
