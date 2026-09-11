@@ -26,6 +26,9 @@ DEFAULT_CONFIG = {
         "install_date": "",          # 首次使用日期 ISO 格式
     },
     "history": [],                   # [{text, timestamp, engine, chars}, ...] 最近 100 条
+    "todo_items": [],                # [{text, important, created_at}, ...] 待办事项列表
+    "todo_done": [],                  # [{text, important, completed_at}, ...] 已完成列表（按日期分组展示）
+    "google_client_secret_path": "",  # Google OAuth 凭证文件路径，为空则用默认路径
 }
 
 

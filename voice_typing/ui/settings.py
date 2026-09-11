@@ -225,10 +225,11 @@ class SettingsWindow(QWidget):
 
     engine_changed = pyqtSignal(object)
 
-    def __init__(self, config, hotkey_manager):
+    def __init__(self, config, hotkey_manager, app_obj=None):
         super().__init__()
         self._config = config
         self._hotkey = hotkey_manager
+        self._app_obj = app_obj
         self._engine = None
         self._nav_btns = []
         self._new_hotkey_keys = None
@@ -242,7 +243,7 @@ class SettingsWindow(QWidget):
     # ---------- UI 框架 ----------
 
     def _init_ui(self):
-        self.setWindowTitle("VoiceType")
+        self.setWindowTitle("个人语音工作助手")
         self.setMinimumSize(1000, 620)
         self.resize(1000, 680)
         self.setWindowIcon(_make_tray_icon())
@@ -261,7 +262,7 @@ class SettingsWindow(QWidget):
 
         # Logo
         from voice_typing import __version__, __dev__
-        logo = QLabel("VoiceType")
+        logo = QLabel("个人语音工作助手")
         logo.setStyleSheet("font-size: 16pt; font-weight: bold; color: #1d1d1f; padding: 8px 8px 4px 8px;")
         sidebar_layout.addWidget(logo)
 
@@ -275,6 +276,7 @@ class SettingsWindow(QWidget):
             ("主页面", 0),
             ("历史记录", 1),
             ("词典", 2),
+            ("待办事项", 3),
         ]
         for label, idx in nav_items:
             btn = QPushButton(label)
@@ -319,6 +321,7 @@ class SettingsWindow(QWidget):
         self._stack.addWidget(self._build_home_page())
         self._stack.addWidget(self._build_history_page())
         self._stack.addWidget(self._build_dictionary_page())
+        self._stack.addWidget(self._build_todo_page())
         root.addWidget(self._stack)
 
     # ---------- 导航 ----------
@@ -738,12 +741,473 @@ class SettingsWindow(QWidget):
             self._dict_status.setText("同步失败")
         QTimer.singleShot(3000, lambda: self._dict_status.setText(""))
 
+    # ---------- Page: 待办事项 ----------
+
+    def _build_todo_page(self):
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(40, 36, 40, 36)
+        layout.setSpacing(16)
+
+        title_row = QHBoxLayout()
+        title = QLabel("待办事项")
+        title.setStyleSheet("font-size: 16pt; font-weight: bold; color: #1d1d1f;")
+        title_row.addWidget(title)
+        title_row.addStretch()
+
+        self._todo_sync_status = QLabel("")
+        self._todo_sync_status.setObjectName("subtitle")
+        title_row.addWidget(self._todo_sync_status)
+
+        sync_push_btn = QPushButton("同步到 Google")
+        sync_push_btn.clicked.connect(self._sync_todo_to_google)
+        title_row.addWidget(sync_push_btn)
+
+        sync_pull_btn = QPushButton("从 Google 拉取")
+        sync_pull_btn.clicked.connect(self._sync_todo_from_google)
+        title_row.addWidget(sync_pull_btn)
+
+        self._todo_float_btn = QPushButton("悬浮显示")
+        self._todo_float_btn.setObjectName("accent")
+        self._todo_float_btn.clicked.connect(self._toggle_todo_float)
+        title_row.addWidget(self._todo_float_btn)
+        layout.addLayout(title_row)
+
+        hint = QLabel("勾选完成后会移入下方「已完成」列表（按日期分组，方便写周报）。点击删除将彻底移除，不再保留。")
+        hint.setObjectName("subtitle")
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
+
+        # Google 同步凭证配置
+        google_config_card = QGroupBox("Google 同步配置")
+        google_config_layout = QVBoxLayout(google_config_card)
+        google_config_layout.setSpacing(8)
+
+        secret_row = QHBoxLayout()
+        self._google_secret_path_input = QLineEdit()
+        self._google_secret_path_input.setPlaceholderText("Google OAuth 凭证文件路径（client_secret_*.json）")
+        self._google_secret_path_input.setText(self._config.get("google_client_secret_path", ""))
+        self._google_secret_path_input.textChanged.connect(self._on_google_secret_path_changed)
+        secret_row.addWidget(self._google_secret_path_input)
+
+        browse_btn = QPushButton("选择文件...")
+        browse_btn.setFixedWidth(100)
+        browse_btn.clicked.connect(self._browse_google_secret_file)
+        secret_row.addWidget(browse_btn)
+        google_config_layout.addLayout(secret_row)
+
+        self._google_status_label = QLabel("")
+        self._google_status_label.setObjectName("subtitle")
+        google_config_layout.addWidget(self._google_status_label)
+
+        revoke_btn = QPushButton("重新授权（清除已保存的登录状态）")
+        revoke_btn.clicked.connect(self._revoke_google_auth)
+        google_config_layout.addWidget(revoke_btn)
+
+        layout.addWidget(google_config_card)
+        self._refresh_google_status()
+
+        self._todo_list = QListWidget()
+        self._todo_list.setStyleSheet("""
+            QListWidget {
+                background: #ffffff;
+                border: none;
+                border-radius: 12px;
+                padding: 8px;
+            }
+        """)
+        layout.addWidget(self._todo_list)
+
+        input_row = QHBoxLayout()
+        self._todo_input = QLineEdit()
+        self._todo_input.setPlaceholderText("添加待办事项...")
+        self._todo_input.returnPressed.connect(self._add_todo_item)
+        input_row.addWidget(self._todo_input)
+        add_btn = QPushButton("添加")
+        add_btn.setObjectName("accent")
+        add_btn.setFixedWidth(80)
+        add_btn.clicked.connect(self._add_todo_item)
+        input_row.addWidget(add_btn)
+        layout.addLayout(input_row)
+
+        # 已完成列表（按日期分组，可折叠）
+        done_title_row = QHBoxLayout()
+        done_title = QLabel("已完成")
+        done_title.setObjectName("subtitle")
+        done_title_row.addWidget(done_title)
+        done_title_row.addStretch()
+        self._todo_done_toggle_btn = QPushButton("收起")
+        self._todo_done_toggle_btn.setFixedWidth(70)
+        self._todo_done_toggle_btn.clicked.connect(self._toggle_todo_done_visible)
+        done_title_row.addWidget(self._todo_done_toggle_btn)
+        layout.addLayout(done_title_row)
+
+        self._todo_done_list = QListWidget()
+        self._todo_done_list.setStyleSheet("""
+            QListWidget {
+                background: #f5f5f7;
+                border: none;
+                border-radius: 12px;
+                padding: 8px;
+            }
+        """)
+        layout.addWidget(self._todo_done_list)
+
+        self._todo_float_win = None
+        self._refresh_todo_list()
+        self._refresh_todo_done_list()
+        return page
+
+    def _refresh_todo_list(self):
+        self._todo_list.clear()
+        items = self._config.get("todo_items", [])
+        for item_data in items:
+            self._add_todo_list_row(item_data)
+
+    def _toggle_todo_done_visible(self):
+        if self._todo_done_list.isVisible():
+            self._todo_done_list.hide()
+            self._todo_done_toggle_btn.setText("展开")
+        else:
+            self._todo_done_list.show()
+            self._todo_done_toggle_btn.setText("收起")
+
+    def _refresh_todo_done_list(self):
+        import time
+        self._todo_done_list.clear()
+        done_items = self._config.get("todo_done", [])
+
+        # 按完成日期分组（yyyy-MM-dd），最新日期在前
+        groups = {}
+        for item_data in done_items:
+            completed_at = item_data.get("completed_at")
+            date_key = (
+                time.strftime("%Y-%m-%d", time.localtime(completed_at / 1000))
+                if completed_at else "未知日期"
+            )
+            groups.setdefault(date_key, []).append(item_data)
+
+        for date_key in sorted(groups.keys(), reverse=True):
+            # 日期分组标题
+            date_row = QWidget()
+            date_layout = QHBoxLayout(date_row)
+            date_layout.setContentsMargins(4, 4, 4, 4)
+            date_label = QLabel(f"📅 {date_key}（{len(groups[date_key])} 项）")
+            date_label.setStyleSheet("color: #6e6e73; font-weight: bold; font-size: 9pt;")
+            date_layout.addWidget(date_label)
+            date_layout.addStretch()
+            date_list_item = QListWidgetItem()
+            self._todo_done_list.addItem(date_list_item)
+            self._todo_done_list.setItemWidget(date_list_item, date_row)
+            date_row.adjustSize()
+            date_list_item.setSizeHint(date_row.sizeHint())
+
+            for item_data in groups[date_key]:
+                row = QWidget()
+                row_layout = QHBoxLayout(row)
+                row_layout.setContentsMargins(20, 2, 4, 2)
+                row_layout.setSpacing(8)
+
+                text = item_data.get("text", "")
+                prefix = "★ " if item_data.get("important") else ""
+                label = QLabel(f"✓ {prefix}{text}")
+                label.setWordWrap(True)
+                label.setStyleSheet("color: #8e8e93; text-decoration: line-through;")
+                row_layout.addWidget(label, 1)
+
+                del_btn = QPushButton("删除")
+                del_btn.setFixedWidth(60)
+                del_btn.setCursor(Qt.PointingHandCursor)
+                row_layout.addWidget(del_btn)
+
+                undo_btn = QPushButton("撤回")
+                undo_btn.setFixedWidth(60)
+                undo_btn.setCursor(Qt.PointingHandCursor)
+                undo_btn.setStyleSheet("QPushButton { color: #007aff; }")
+                row_layout.addWidget(undo_btn)
+
+                list_item = QListWidgetItem()
+                self._todo_done_list.addItem(list_item)
+                self._todo_done_list.setItemWidget(list_item, row)
+                row.adjustSize()
+                list_item.setSizeHint(row.sizeHint())
+
+                def purge_done_item(checked=None, item_data=item_data):
+                    """彻底删除已完成项，不再保留任何记录"""
+                    done_list = self._config.get("todo_done", [])
+                    if item_data in done_list:
+                        done_list.remove(item_data)
+                    self._refresh_todo_done_list()
+                    save_config(self._config)
+
+                def undo_done_item(checked=None, item_data=item_data):
+                    """撤回：从已完成移回待办列表（误勾选找回）"""
+                    done_list = self._config.get("todo_done", [])
+                    if item_data in done_list:
+                        done_list.remove(item_data)
+                    item_data.pop("completed_at", None)
+                    items = self._config.setdefault("todo_items", [])
+                    items.append(item_data)
+                    self._refresh_todo_list()
+                    self._refresh_todo_done_list()
+                    self._save_todo_items()
+
+                del_btn.clicked.connect(purge_done_item)
+                undo_btn.clicked.connect(undo_done_item)
+
+    def _add_todo_list_row(self, item_data):
+        text = item_data.get("text", "")
+
+        row = QWidget()
+        row_layout = QHBoxLayout(row)
+        row_layout.setContentsMargins(4, 4, 4, 4)
+        row_layout.setSpacing(8)
+
+        checkbox = QCheckBox()
+        checkbox.setChecked(False)
+        row_layout.addWidget(checkbox)
+
+        important_btn = QPushButton("★" if item_data.get("important") else "☆")
+        important_btn.setFixedWidth(24)
+        important_btn.setCursor(Qt.PointingHandCursor)
+        important_btn.setStyleSheet("QPushButton { background: transparent; border: none; color: #ff3b30; font-size: 13px; }")
+        row_layout.addWidget(important_btn)
+
+        label = QLineEdit(text)
+        label.setReadOnly(True)
+        label.setFrame(False)
+        label.setCursor(Qt.IBeamCursor)
+
+        def _apply_label_style():
+            base = "background: transparent; border: none; padding: 0px;"
+            if item_data.get("important"):
+                label.setStyleSheet(base + "color: #ff3b30; font-weight: bold;")
+            else:
+                label.setStyleSheet(base + "color: #1d1d1f;")
+        _apply_label_style()
+        row_layout.addWidget(label, 1)
+
+        def toggle_important():
+            item_data["important"] = not item_data.get("important", False)
+            important_btn.setText("★" if item_data["important"] else "☆")
+            _apply_label_style()
+            self._save_todo_items()
+
+        important_btn.clicked.connect(toggle_important)
+
+        def _enter_edit_mode(event):
+            label.setReadOnly(False)
+            label.setStyleSheet("background: #f5f5f7; border: 1px solid #007aff; border-radius: 4px; padding: 2px 4px; color: #1d1d1f;")
+            label.setFocus()
+            label.selectAll()
+
+        def _save_edit():
+            new_text = label.text().strip()
+            if new_text:
+                item_data["text"] = new_text
+            else:
+                label.setText(item_data.get("text", ""))
+            label.setReadOnly(True)
+            _apply_label_style()
+            self._save_todo_items()
+
+        label.mouseDoubleClickEvent = _enter_edit_mode
+        label.editingFinished.connect(_save_edit)
+
+        del_btn = QPushButton("删除")
+        del_btn.setFixedWidth(60)
+        del_btn.setCursor(Qt.PointingHandCursor)
+        row_layout.addWidget(del_btn)
+
+        list_item = QListWidgetItem()
+        self._todo_list.addItem(list_item)
+        self._todo_list.setItemWidget(list_item, row)
+        row.adjustSize()
+        list_item.setSizeHint(row.sizeHint())
+
+        def mark_done(checked):
+            """勾选完成：从待办列表移除，移入已完成列表（按日期分组）"""
+            if not checked:
+                return
+            import time
+            items = self._config.get("todo_items", [])
+            if item_data in items:
+                items.remove(item_data)
+            item_data["done"] = True
+            item_data["completed_at"] = int(time.time() * 1000)
+            done_list = self._config.setdefault("todo_done", [])
+            done_list.insert(0, item_data)
+            self._refresh_todo_list()
+            self._refresh_todo_done_list()
+            self._save_todo_items()
+
+        def delete_row():
+            """彻底删除：不保留任何记录"""
+            items = self._config.get("todo_items", [])
+            if item_data in items:
+                items.remove(item_data)
+            self._refresh_todo_list()
+            self._save_todo_items()
+
+        checkbox.toggled.connect(mark_done)
+        del_btn.clicked.connect(delete_row)
+
+    def _add_todo_item(self):
+        text = self._todo_input.text().strip()
+        if not text:
+            return
+        import time, uuid
+        items = self._config.setdefault("todo_items", [])
+        item_data = {
+            "text": text, "important": False,
+            "created_at": int(time.time() * 1000),
+            "local_id": str(uuid.uuid4()),
+        }
+        items.append(item_data)
+        self._add_todo_list_row(item_data)
+        self._todo_input.clear()
+        self._save_todo_items()
+
+    def _save_todo_items(self):
+        save_config(self._config)
+        # 同步给悬浮窗（如果打开着）
+        if self._todo_float_win is not None:
+            self._todo_float_win.set_items(self._config.get("todo_items", []))
+
+    def _toggle_todo_float(self):
+        try:
+            from voice_typing.ui.todo import TodoFloatWindow
+            if self._todo_float_win is not None and self._todo_float_win.isVisible():
+                self._todo_float_win.hide()
+                self._todo_float_btn.setText("悬浮显示")
+                return
+
+            if self._todo_float_win is None:
+                items = self._config.setdefault("todo_items", [])
+
+                def _on_change(new_items):
+                    self._config["todo_items"] = new_items
+                    save_config(self._config)
+                    self._refresh_todo_list()
+
+                def _on_mark_done(item_data):
+                    """悬浮窗勾选完成时，同步移入已完成列表"""
+                    import time
+                    item_data["done"] = True
+                    item_data["completed_at"] = int(time.time() * 1000)
+                    done_list = self._config.setdefault("todo_done", [])
+                    done_list.insert(0, item_data)
+                    save_config(self._config)
+                    self._refresh_todo_list()
+                    self._refresh_todo_done_list()
+
+                self._todo_float_win = TodoFloatWindow(
+                    todo_items=items, on_change=_on_change, on_mark_done=_on_mark_done
+                )
+                self._todo_float_win.closed.connect(
+                    lambda: self._todo_float_btn.setText("悬浮显示")
+                )
+                # 定位到当前光标所在屏幕的右上角（多屏/旋转屏幕环境下更可靠）
+                from PyQt5.QtGui import QCursor
+                screen = QApplication.screenAt(QCursor.pos()) or QApplication.primaryScreen()
+                geo = screen.availableGeometry()
+                self._todo_float_win.move(geo.x() + geo.width() - 300, geo.y() + 60)
+            else:
+                self._todo_float_win.set_items(self._config.get("todo_items", []))
+
+            self._todo_float_win.show()
+            self._todo_float_win.raise_()
+            self._todo_float_win.activateWindow()
+            self._todo_float_btn.setText("关闭悬浮")
+        except Exception as e:
+            import traceback
+            print(f"[待办] 悬浮窗异常: {e}")
+            traceback.print_exc()
+
+    def _on_google_secret_path_changed(self, text):
+        self._config["google_client_secret_path"] = text.strip()
+        save_config(self._config)
+        self._refresh_google_status()
+
+    def _browse_google_secret_file(self):
+        from PyQt5.QtWidgets import QFileDialog
+        path, _ = QFileDialog.getOpenFileName(
+            self, "选择 Google OAuth 凭证文件", os.path.expanduser("~"),
+            "JSON 文件 (*.json)"
+        )
+        if path:
+            self._google_secret_path_input.setText(path)  # 触发 textChanged -> 自动保存
+
+    def _refresh_google_status(self):
+        from voice_typing.core.google_sync import get_credential_status
+        status = get_credential_status()
+        if not status["has_client_secret"]:
+            self._google_status_label.setText(f"⚠ 未找到凭证文件: {status['client_secret_path']}")
+        elif status["authorized"]:
+            self._google_status_label.setText("✓ 凭证文件已配置，已完成授权")
+        else:
+            self._google_status_label.setText("凭证文件已配置，尚未授权（点击「同步到 Google」将触发授权）")
+
+    def _revoke_google_auth(self):
+        from voice_typing.core.google_sync import TOKEN_PATH
+        if os.path.exists(TOKEN_PATH):
+            os.remove(TOKEN_PATH)
+        self._refresh_google_status()
+        self._todo_sync_status.setText("已清除授权状态，下次同步将重新登录")
+        QTimer.singleShot(4000, lambda: self._todo_sync_status.setText(""))
+
+    def _sync_todo_to_google(self):
+        """把本地待办推送到 Google Tasks"""
+        import uuid
+        # 确保所有待办都有 local_id（兼容旧数据）
+        for item in self._config.get("todo_items", []) + self._config.get("todo_done", []):
+            if not item.get("local_id"):
+                item["local_id"] = str(uuid.uuid4())
+        save_config(self._config)
+
+        self._todo_sync_status.setText("同步中...")
+        QApplication.processEvents()
+        from voice_typing.core.google_sync import push_todo_items
+        ok, msg = push_todo_items(
+            self._config.get("todo_items", []),
+            self._config.get("todo_done", []),
+        )
+        save_config(self._config)  # push_todo_items 会写回 google_task_id，需要落盘
+        self._todo_sync_status.setText(msg)
+        print(f"[待办同步] {msg}")
+        QTimer.singleShot(4000, lambda: self._todo_sync_status.setText(""))
+
+    def _sync_todo_from_google(self):
+        """从 Google Tasks 拉取待办，覆盖本地列表"""
+        reply = QMessageBox.question(
+            self, "确认拉取",
+            "从 Google 拉取将覆盖本地当前的待办列表，是否继续？",
+            QMessageBox.Yes | QMessageBox.No,
+        )
+        if reply != QMessageBox.Yes:
+            return
+
+        self._todo_sync_status.setText("拉取中...")
+        QApplication.processEvents()
+        from voice_typing.core.google_sync import pull_todo_items
+        ok, msg, todo_items, todo_done = pull_todo_items()
+        if ok:
+            self._config["todo_items"] = todo_items
+            self._config["todo_done"] = todo_done
+            save_config(self._config)
+            self._refresh_todo_list()
+            self._refresh_todo_done_list()
+        self._todo_sync_status.setText(msg)
+        print(f"[待办同步] {msg}")
+        QTimer.singleShot(4000, lambda: self._todo_sync_status.setText(""))
+
     # ---------- Page 3: 设置 ----------
 
     def _build_settings_page(self):
         page = QWidget()
         outer = QVBoxLayout(page)
         outer.setContentsMargins(0, 0, 0, 0)
+
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -913,6 +1377,11 @@ class SettingsWindow(QWidget):
         mode_row.addStretch()
         hlayout.addLayout(mode_row)
 
+        tip_label = QLabel("提示：双击浮窗中心的 AI 球可一键优化当前剪贴板内容")
+        tip_label.setObjectName("subtitle")
+        tip_label.setWordWrap(True)
+        hlayout.addWidget(tip_label)
+
         layout.addWidget(hotkey_card)
 
         # 文本润色模型（独立配置，可选择）
@@ -1054,7 +1523,7 @@ class SettingsWindow(QWidget):
         # 开机启动
         autostart_card = QGroupBox("开机启动")
         alayout_auto = QVBoxLayout(autostart_card)
-        self._autostart_check = QCheckBox("开机自动启动 VoiceType")
+        self._autostart_check = QCheckBox("开机自动启动个人语音工作助手")
         alayout_auto.addWidget(self._autostart_check)
         layout.addWidget(autostart_card)
 
@@ -1089,18 +1558,25 @@ class SettingsWindow(QWidget):
     def _init_tray(self):
         self._tray = QSystemTrayIcon(self)
         self._tray.setIcon(_make_tray_icon())
-        self._tray.setToolTip("VoiceType — 语音输入")
+        self._tray.setToolTip("个人语音工作助手 — 语音输入")
 
         menu = QMenu()
         show_action = menu.addAction("显示主窗口")
         menu.addSeparator()
-        quit_action = menu.addAction("退出 VoiceType")
+        polish_clip_action = menu.addAction("优化剪贴板内容")
+        polish_focus_action = menu.addAction("优化当前输入框内容")
+        menu.addSeparator()
+        quit_action = menu.addAction("退出个人语音工作助手")
 
         def _on_menu_triggered(action):
             if action == quit_action:
                 self._quit_app()
             elif action == show_action:
                 self._show_window()
+            elif action == polish_clip_action:
+                self._polish_clipboard_from_tray()
+            elif action == polish_focus_action:
+                self._polish_focused_input_from_tray()
 
         menu.triggered.connect(_on_menu_triggered)
 
@@ -1408,6 +1884,41 @@ class SettingsWindow(QWidget):
         self.raise_()
         self.activateWindow()
 
+    def _polish_clipboard_from_tray(self):
+        """托盘菜单触发：优化剪贴板内容"""
+        if self._app_obj is None:
+            print("[剪贴板优化] app_obj 未设置，无法执行")
+            return
+        self._tray.showMessage(
+            "个人语音工作助手", "正在优化剪贴板内容...",
+            QSystemTrayIcon.Information, 1500,
+        )
+        self._app_obj.polish_clipboard()
+        self._app_obj.clipboard_polish_done.connect(self._on_clipboard_polish_done)
+
+    def _polish_focused_input_from_tray(self):
+        """托盘菜单触发：优化当前焦点输入框内容（全选→复制→润色→粘贴覆盖）"""
+        if self._app_obj is None:
+            print("[焦点优化] app_obj 未设置，无法执行")
+            return
+        self._tray.showMessage(
+            "个人语音工作助手", "正在优化当前输入框内容...",
+            QSystemTrayIcon.Information, 1500,
+        )
+        self._app_obj.polish_focused_input()
+        self._app_obj.clipboard_polish_done.connect(self._on_clipboard_polish_done)
+
+    def _on_clipboard_polish_done(self, ok, msg):
+        try:
+            self._app_obj.clipboard_polish_done.disconnect(self._on_clipboard_polish_done)
+        except Exception:
+            pass
+        self._tray.showMessage(
+            "个人语音工作助手", msg,
+            QSystemTrayIcon.Information if ok else QSystemTrayIcon.Warning,
+            3000,
+        )
+
     AUTOSTART_DIR = os.path.expanduser("~/.config/autostart")
     AUTOSTART_FILE = os.path.join(AUTOSTART_DIR, "voice-typing.desktop")
 
@@ -1417,7 +1928,7 @@ class SettingsWindow(QWidget):
             with open(self.AUTOSTART_FILE, "w") as f:
                 f.write("""[Desktop Entry]
 Type=Application
-Name=VoiceType
+Name=个人语音工作助手
 Exec=/usr/bin/voice-typing
 Icon=voice-typing
 Terminal=false
